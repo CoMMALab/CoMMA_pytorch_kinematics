@@ -24,11 +24,13 @@ This branch represents an initial attempt to modify UM-ARM-Lab's Pytorch Kinemat
 Data was collected and analyzed to see if the implemented interpolation made a statistically significant difference (and was better) than the current implementation. Pose Error (Meters) and Rotation Error (Radians) were used as metrics for evaluation.   
 
 #### Data was in the following format:
-Position_Error	Rotation_Error	n	Max_Iterations
-0	0.182549	3.048403	0	10
-1	0.620945	1.737529	0	3
-2	0.405104	4.298621	0	3
-3	0.492345	2.005253	0	3
+| n  | Position_Error | Rotation_Error | Max_Iterations |
+|----|----------------|----------------|----------------|
+| 0  | 0.182549       | 3.048403       | 10             |
+| 1  | 0.620945       | 1.737529       | 3              |
+| 2  | 0.405104       | 4.298621       | 3              |
+| 3  | 0.492345       | 2.005253       | 3              |
+| ...  | ...       | ...       | ...              |
 
 #### The following summary statistics were generated for the data:
 | n  | Pos_Err_Mean | Pos_Err_Std | Pos_Err_Min | Pos_Err_Max | Rot_Err_Mean | Rot_Err_Std | Rot_Err_Min | Rot_Err_Max |

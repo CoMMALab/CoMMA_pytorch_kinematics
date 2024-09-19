@@ -8,3 +8,4 @@ except ImportError:
 from pytorch_kinematics.transforms import *
 from pytorch_kinematics.chain import *
 from pytorch_kinematics.ik import *
+from pytorch_kinematics.slerp import *

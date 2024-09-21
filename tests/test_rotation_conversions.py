@@ -9,6 +9,7 @@ from pytorch_kinematics.transforms.rotation_conversions import axis_and_angle_to
 
 
 def test_axis_angle_to_matrix_perf():
+    print("Test two implementations of axis_angle_to_matrix from UM-ARM lab.")
     number = 100
     N = 1_000
 
@@ -18,10 +19,10 @@ def test_axis_angle_to_matrix_perf():
     theta = axis_angle.norm(dim=1, keepdim=True)
 
     dt1 = timeit.timeit(lambda: axis_angle_to_matrix(axis_angle), number=number)
-    print(f'Old method: {dt1:.5f}')
+    print(f'Old method: {dt1:.5f}ms')
 
     dt2 = timeit.timeit(lambda: axis_and_angle_to_matrix_33(axis=axis_1d, theta=theta), number=number)
-    print(f'New method: {dt2:.5f}')
+    print(f'New method: {dt2:.5f}ms')
 
 
 def test_quaternion_not_close():

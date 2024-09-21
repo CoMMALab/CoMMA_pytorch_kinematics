@@ -35,7 +35,11 @@ def test_menagerie():
         xml_filename = _MENAGERIE_ROOT / xml_filename
         xml_dir = xml_filename.parent
         # Menagerie files assume the current working directory is the directory of the scene.xml
-        os.chdir(xml_dir)
+        try:
+            os.chdir(xml_dir)
+        except:
+            print("Mujoco files not downloaded.")
+            break
         with xml_filename.open('r') as f:
             xml = f.read()
         chain = pk.build_chain_from_mjcf(xml, body)

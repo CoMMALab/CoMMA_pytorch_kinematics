@@ -5,6 +5,7 @@ import pytorch_kinematics as pk
 
 
 def test_transform():
+    print("Test matrix_to_quat and quat_to_matrix transformations can be done without messing the values up")
     N = 20
     mats = tf.random_rotations(N, dtype=torch.float64, device="cpu", requires_grad=True)
     assert list(mats.shape) == [N, 3, 3]
@@ -12,13 +13,18 @@ def test_transform():
     quat = tf.matrix_to_quaternion(mats)
     assert list(quat.shape) == [N, 4]
     mats_recovered = tf.quaternion_to_matrix(quat)
+    if torch.allclose(mats, mats_recovered):
+        print("\tTransformations did not alter data.")
     assert torch.allclose(mats, mats_recovered)
 
     quat_identity = tf.quaternion_multiply(quat, tf.quaternion_invert(quat))
+    if torch.allclose(tf.quaternion_to_matrix(quat_identity), torch.eye(3, dtype=torch.float64).repeat(N, 1, 1)):
+        print("\tMatrix multiplication of quaternion and it's inverse results in identity quaternion (expected).")
     assert torch.allclose(tf.quaternion_to_matrix(quat_identity), torch.eye(3, dtype=torch.float64).repeat(N, 1, 1))
 
 
 def test_translations():
+    print("Test translation function implementation")
     t = tf.Translate(1, 2, 3)
     points = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5, 0.0]]).view(
         1, 3, 3
@@ -27,6 +33,8 @@ def test_translations():
     points_out_expected = torch.tensor(
         [[2.0, 2.0, 3.0], [1.0, 3.0, 3.0], [1.5, 2.5, 3.0]]
     ).view(1, 3, 3)
+    if torch.allclose(points_out, points_out_expected):
+        print("\tTranslation of points is functional.")
     assert torch.allclose(points_out, points_out_expected)
 
     N = 20
@@ -37,9 +45,11 @@ def test_translations():
     assert torch.allclose(translated_points, translation.repeat(N, 1, 1).transpose(0, 1) + points)
     returned_points = transforms.inverse().transform_points(translated_points)
     assert torch.allclose(returned_points, points, atol=1e-6)
+    print("\tBatch translations tests passed.")
 
 
 def test_rotate_axis_angle():
+    print("Test rotation by 90 degrees along the Z-axis")
     t = tf.Transform3d().rotate_axis_angle(90.0, axis="Z")
     points = torch.tensor([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 1.0]]).view(
         1, 3, 3
@@ -57,9 +67,11 @@ def test_rotate_axis_angle():
     ).view(1, 3, 3)
     assert torch.allclose(points_out, points_out_expected)
     assert torch.allclose(normals_out, normals_out_expected)
+    print("\tTests passed.")
 
 
 def test_rotate():
+    print("Test rotation implementation.")
     R = tf.so3_exp_map(torch.randn((1, 3)))
     t = tf.Transform3d().rotate(R)
     points = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5, 0.0]]).view(
@@ -77,9 +89,11 @@ def test_rotate():
     for i in range(3):
         assert torch.allclose(points_out[0, i], R @ points[0, i], atol=1e-7)
         assert torch.allclose(normals_out[0, i], R @ normals[0, i], atol=1e-7)
+    print("\tRotation tests passed.")
 
 
 def test_transform_combined():
+    print("Test combination of rotations and translation")
     R = tf.so3_exp_map(torch.randn((1, 3)))
     tr = torch.randn((1, 3))
     t = tf.Transform3d(rot=R, pos=tr)
@@ -91,9 +105,11 @@ def test_transform_combined():
     for i in range(N):
         assert torch.allclose(points_out[i], R @ points[i] + tr, atol=1e-7)
         assert torch.allclose(normals_out[i], R @ normals[i], atol=1e-7)
+    print("\tCombined tests passed.")
 
 
 def test_euler():
+    print("Test Euler angle transformation")
     euler_angles = torch.tensor([1, 0, 0.5])
     t = tf.Transform3d(rot=euler_angles)
     sxyz_matrix = torch.tensor([[0.87758256, -0.47942554, 0., 0., ],
@@ -104,9 +120,11 @@ def test_euler():
     # print(euler_matrix(*euler_angles, "rxyz"))
     # print(t.get_matrix())
     assert torch.allclose(sxyz_matrix, t.get_matrix())
+    print("\tEuler Angle Transformation tests passed.")
 
 
 def test_quaternions():
+    print("Test Transformations work on Random Seeding of Quaternions")
     import pytorch_seed
     pytorch_seed.seed(0)
 
@@ -139,9 +157,11 @@ def test_quaternions():
     d = pk.quaternion_angular_distance(q1, q2)
     expected_d = (magnitudes - 1).abs()
     assert torch.allclose(d, expected_d, atol=1e-4)
+    print("\tRandom seeding tests pass.")
 
 
 def test_compose():
+    print("Test Compose")
     import torch
     theta = 1.5707
     a2b = tf.Transform3d(pos=[0.1, 0, 0])  # joint.offset
@@ -151,9 +171,11 @@ def test_compose():
     m = a2c.get_matrix()
     print(m)
     print(a2c.transform_points(torch.zeros([1, 3])))
+    print("\tComposition of Transforms tests passed.")
 
 
 def test_quaternion_slerp():
+    print("Test Quaternion Slerp")
     q = tf.random_quaternions(20)
     q1 = q[:10]
     q2 = q[10:]
@@ -164,6 +186,7 @@ def test_quaternion_slerp():
     interp_dist = pk.quaternion_angular_distance(q1, q_interp)
     # print(f"full_dist: {full_dist} interp_dist: {interp_dist} t: {t}")
     assert torch.allclose(full_dist * t, interp_dist, atol=1e-5)
+    print("\tSLERP tests passed.")
 
 
 if __name__ == "__main__":

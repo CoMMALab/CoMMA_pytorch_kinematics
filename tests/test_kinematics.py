@@ -19,22 +19,36 @@ def quat_pos_from_transform3d(tg):
 
 # test more complex robot and the MJCF parser
 def test_fk_mjcf():
+    print("Test forward kinematics for MJCF robot")
     chain = pk.build_chain_from_mjcf(open(os.path.join(TEST_DIR, "ant.xml")).read())
     chain = chain.to(dtype=torch.float64)
-    print(chain)
-    print(chain.get_joint_parameter_names())
+    print("\tRobot chain:", chain)
+    print("\tJoint parameter names:", chain.get_joint_parameter_names())
 
     th = {joint: 0.0 for joint in chain.get_joint_parameter_names()}
     th.update({'hip_1': 1.0, 'ankle_1': 1})
+    print("\tJoint angles:", th)
+
     ret = chain.forward_kinematics(th)
     tg = ret['aux_1']
     pos, rot = quat_pos_from_transform3d(tg)
+
+    if (quaternion_close(rot, torch.tensor([0.87758256, 0., 0., 0.47942554], dtype=torch.float64))):
+        print("\tRotation Quaternions aux_1 match.")
     assert quaternion_close(rot, torch.tensor([0.87758256, 0., 0., 0.47942554], dtype=torch.float64))
+    if torch.allclose(pos, torch.tensor([0.2, 0.2, 0.75], dtype=torch.float64)):
+        print("\tPosition Quaternions aux_1 match.")
     assert torch.allclose(pos, torch.tensor([0.2, 0.2, 0.75], dtype=torch.float64))
+
     tg = ret['front_left_foot']
     pos, rot = quat_pos_from_transform3d(tg)
+    if quaternion_close(rot, torch.tensor([0.77015115, -0.4600326, 0.13497724, 0.42073549], dtype=torch.float64)):
+        print("\tRotation Quaternions front_left_foot match.")
     assert quaternion_close(rot, torch.tensor([0.77015115, -0.4600326, 0.13497724, 0.42073549], dtype=torch.float64))
+    if torch.allclose(pos, torch.tensor([0.13976626, 0.47635466, 0.75], dtype=torch.float64)):
+        print("\tPosition Quaternions front_left_foot match.")
     assert torch.allclose(pos, torch.tensor([0.13976626, 0.47635466, 0.75], dtype=torch.float64))
+    print("\tForward kinematics test for MJCF completed successfully.")
     print(ret)
 
 
@@ -48,6 +62,7 @@ def test_fk_serial_mjcf():
 
 
 def test_fkik():
+    print("Test forward kinematics setup for inverse kinematics")
     data = '<robot name="test_robot">' \
            '<link name="link1" />' \
            '<link name="link2" />' \
@@ -67,8 +82,13 @@ def test_fkik():
     th1 = torch.tensor([0.42553542, 0.17529176])
     tg = chain.forward_kinematics(th1)
     pos, rot = quat_pos_from_transform3d(tg)
-    assert torch.allclose(pos, torch.tensor([[1.91081784, 0.41280851, 0.0000]]))
+    if quaternion_close(rot, torch.tensor([[0.95521418, 0.0000, 0.0000, 0.2959153]])):
+        print("\tRotation Quaternion matches the expected value.")
     assert quaternion_close(rot, torch.tensor([[0.95521418, 0.0000, 0.0000, 0.2959153]]))
+    if torch.allclose(pos, torch.tensor([[1.91081784, 0.41280851, 0.0000]])):
+        print("\tPosition Quaternion matches the expected value.")
+    assert torch.allclose(pos, torch.tensor([[1.91081784, 0.41280851, 0.0000]]))
+    
     N = 20
     th_batch = torch.rand(N, 2)
     tg_batch = chain.forward_kinematics(th_batch)
@@ -86,6 +106,8 @@ def test_fkik():
     pos.norm().backward()
     assert th2.grad is not None
 
+    print("\tGradient extraction is functional.")
+
 
 def test_urdf():
     chain = pk.build_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read())
@@ -94,11 +116,16 @@ def test_urdf():
     ret = chain.forward_kinematics(th)
     tg = ret['lbr_iiwa_link_7']
     pos, rot = quat_pos_from_transform3d(tg)
+    if quaternion_close(rot, torch.tensor([7.07106781e-01, 0, -7.07106781e-01, 0], dtype=torch.float64)):
+        print("\tRotation Quaternion matches the expected value.")
     assert quaternion_close(rot, torch.tensor([7.07106781e-01, 0, -7.07106781e-01, 0], dtype=torch.float64))
+    if torch.allclose(pos, torch.tensor([-6.60827561e-01, 0, 3.74142136e-01], dtype=torch.float64), atol=1e-6):
+        print("\tPosition Quaternion matches the expected value.")  
     assert torch.allclose(pos, torch.tensor([-6.60827561e-01, 0, 3.74142136e-01], dtype=torch.float64), atol=1e-6)
 
 
 def test_urdf_serial():
+    print("Test building serial chain from URDF")
     chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read(), "lbr_iiwa_link_7")
     chain.to(dtype=torch.float64)
     th = [0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0]
@@ -106,10 +133,14 @@ def test_urdf_serial():
     ret = chain.forward_kinematics(th, end_only=False)
     tg = ret['lbr_iiwa_link_7']
     pos, rot = quat_pos_from_transform3d(tg)
+    if quaternion_close(rot, torch.tensor([7.07106781e-01, 0, -7.07106781e-01, 0], dtype=torch.float64)):
+        print("\tRotation Quaternion matches the expected value.")
     assert quaternion_close(rot, torch.tensor([7.07106781e-01, 0, -7.07106781e-01, 0], dtype=torch.float64))
+    if torch.allclose(pos, torch.tensor([-6.60827561e-01, 0, 3.74142136e-01], dtype=torch.float64), atol=1e-6):
+        print("\tPosition Quaternion matches the expected value.")
     assert torch.allclose(pos, torch.tensor([-6.60827561e-01, 0, 3.74142136e-01], dtype=torch.float64), atol=1e-6)
 
-    N = 1000
+    N = 100
     d = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float64
 
@@ -119,17 +150,19 @@ def test_urdf_serial():
 
     # NOTE: Warmstart since pytorch can be slow the first time you run it
     #  this has to be done after you move it to the GPU. Otherwise the timing isn't representative.
+    print("Warm Starting GPU")
     for _ in range(5):
         ret = chain.forward_kinematics(th)
 
     number = 10
 
+    print("Test forward kinematics time on gpu using serial chain")
     def _fk_parallel():
         tg_batch = chain.forward_kinematics(th_batch)
         m = tg_batch.get_matrix()
 
     dt_parallel = timeit(_fk_parallel, number=number) / number
-    print("elapsed {}s for N={} when parallel".format(dt_parallel, N))
+    print("\telapsed {}s for N={} when parallel".format(dt_parallel, N))
 
     def _fk_serial():
         for i in range(N):
@@ -137,13 +170,14 @@ def test_urdf_serial():
             m = tg.get_matrix()
 
     dt_serial = timeit(_fk_serial, number=number) / number
-    print("elapsed {}s for N={} when serial".format(dt_serial, N))
+    print("\telapsed {}s for N={} when serial".format(dt_serial, N))
 
     # assert torch.allclose(tg.get_matrix().view(4, 4), m[i])
 
 
 # test robot with prismatic and fixed joints
 def test_fk_simple_arm():
+    print("Test forward kinematics for simple arm")
     chain = pk.build_chain_from_sdf(open(os.path.join(TEST_DIR, "simple_arm.sdf")).read())
     chain = chain.to(dtype=torch.float64)
     # print(chain)
@@ -156,25 +190,40 @@ def test_fk_simple_arm():
     })
     tg = ret['arm_wrist_roll']
     pos, rot = quat_pos_from_transform3d(tg)
+    if quaternion_close(rot, torch.tensor([0.70710678, 0., 0., 0.70710678], dtype=torch.float64)):
+        print("\tRotation Quaternion matches the expected value.")
     assert quaternion_close(rot, torch.tensor([0.70710678, 0., 0., 0.70710678], dtype=torch.float64))
+    if torch.allclose(pos, torch.tensor([1.05, 0.55, 0.5], dtype=torch.float64)):
+        print("\tPosition Quaternion matches the expected value.")
     assert torch.allclose(pos, torch.tensor([1.05, 0.55, 0.5], dtype=torch.float64))
+
+    
+    
 
     N = 100
     ret = chain.forward_kinematics({k: torch.rand(N) for k in chain.get_joint_parameter_names()})
     tg = ret['arm_wrist_roll']
+    if list(tg.get_matrix().shape) == [N, 4, 4]:
+        print("\tarm_wrist_roll kinematics has the correct dimensionality: [N,4,4]")
     assert list(tg.get_matrix().shape) == [N, 4, 4]
 
 
 def test_sdf_serial_chain():
+    print("Test building the serial chain from sdf file")
     chain = pk.build_serial_chain_from_sdf(open(os.path.join(TEST_DIR, "simple_arm.sdf")).read(), 'arm_wrist_roll')
     chain = chain.to(dtype=torch.float64)
     tg = chain.forward_kinematics([0., math.pi / 2.0, -0.5, 0.])
     pos, rot = quat_pos_from_transform3d(tg)
+
+    if quaternion_close(rot, torch.tensor([0.70710678, 0., 0., 0.70710678], dtype=torch.float64)):
+        print("\tRotation Quaternion matches the expected value.")
     assert quaternion_close(rot, torch.tensor([0.70710678, 0., 0., 0.70710678], dtype=torch.float64))
+    if torch.allclose(pos, torch.tensor([1.05, 0.55, 0.5], dtype=torch.float64)):
+        print("\tPosition Quaternion matches the expected value.")
     assert torch.allclose(pos, torch.tensor([1.05, 0.55, 0.5], dtype=torch.float64))
 
-
 def test_cuda():
+    print("Test CUDA")
     if torch.cuda.is_available():
         d = "cuda"
         dtype = torch.float64
@@ -195,8 +244,15 @@ def test_cuda():
         })
         tg = ret['arm_wrist_roll']
         pos, rot = quat_pos_from_transform3d(tg)
+        if quaternion_close(rot, torch.tensor([0.70710678, 0., 0., 0.70710678], dtype=dtype, device=d)):
+            print("\tRotation Quaternions front_left_foot match.")
         assert quaternion_close(rot, torch.tensor([0.70710678, 0., 0., 0.70710678], dtype=dtype, device=d))
+        if torch.allclose(pos, torch.tensor([1.05, 0.55, 0.5], dtype=dtype, device=d)):
+            print("\tPosition Quaternions front_left_foot match.")
         assert torch.allclose(pos, torch.tensor([1.05, 0.55, 0.5], dtype=dtype, device=d))
+
+        
+        
 
         data = '<robot name="test_robot">' \
                '<link name="link1" />' \
@@ -222,6 +278,7 @@ def test_cuda():
         for i in range(N):
             tg = chain.forward_kinematics(th_batch[i])
             assert torch.allclose(tg.get_matrix().view(4, 4), m[i])
+        print("\tDimensionalities of forward kinematics batch matches.")
 
 
 # FIXME: comment out because compound joints are no longer implemented
@@ -235,26 +292,33 @@ def test_cuda():
 
 
 def test_mjcf_slide_joint_parsing():
+    print("Test Parsing")
     # just testing that we can parse it without error
     # the slide joint is not actually of a link to another link, but instead of the base to the world
     # which we do not represent
     chain = pk.build_chain_from_mjcf(open(os.path.join(TEST_DIR, "hopper.xml")).read())
-    print(chain.get_joint_parameter_names())
-    print(chain.get_frame_names())
+    print("\t",chain.get_joint_parameter_names())
+    print("\t",chain.get_frame_names())
 
 
 def test_fk_val():
+    print("Test Forward Kinematics Values")
     chain = pk.build_chain_from_mjcf(open(os.path.join(TEST_DIR, "val.xml")).read())
     chain = chain.to(dtype=torch.float64)
     ret = chain.forward_kinematics(torch.zeros([1000, chain.n_joints], dtype=torch.float64))
     tg = ret['drive45']
     pos, rot = quat_pos_from_transform3d(tg)
     torch.set_printoptions(precision=6, sci_mode=False)
+    if quaternion_close(rot, torch.tensor([0.5, 0.5, -0.5, 0.5], dtype=torch.float64)):
+        print("\tRotation Quaternion matches the expected value.")
     assert quaternion_close(rot, torch.tensor([0.5, 0.5, -0.5, 0.5], dtype=torch.float64))
+    if torch.allclose(pos, torch.tensor([-0.225692, 0.259045, 0.262139], dtype=torch.float64)):
+        print("\tPosition Quaternion matches the expected value.")
     assert torch.allclose(pos, torch.tensor([-0.225692, 0.259045, 0.262139], dtype=torch.float64))
 
 
 def test_fk_partial_batched_dict():
+    print("Test subsetting joints with a dictionary")
     # Test that you can pass in dict of batched joint configs for a subset of the joints
     chain = pk.build_serial_chain_from_mjcf(open(os.path.join(TEST_DIR, "val.xml")).read(), 'left_tool')
     th = {
@@ -268,19 +332,28 @@ def test_fk_partial_batched_dict():
         'joint46': torch.zeros([1000], dtype=torch.float64),
         'joint47': torch.zeros([1000], dtype=torch.float64),
     }
+    torch.set_printoptions(precision=2, sci_mode=False)
     chain = chain.to(dtype=torch.float64)
     tg = chain.forward_kinematics(th)
-
+    print("\tRotation/Position Transform Vector:")
+    print("\t",tg)
+    print("\n")
 
 def test_fk_partial_batched():
     # Test that you can pass in dict of batched joint configs for a subset of the joints
+    print("Test subsetting joints")
     chain = pk.build_serial_chain_from_mjcf(open(os.path.join(TEST_DIR, "val.xml")).read(), 'left_tool')
     th = torch.zeros([1000, 9], dtype=torch.float64)
+    torch.set_printoptions(precision=2, sci_mode=False)
     chain = chain.to(dtype=torch.float64)
     tg = chain.forward_kinematics(th)
+    print("\tRotation/Position Transform Vector:")
+    print("\t",tg)
+    print("\n")
 
 
 def test_ur5_fk():
+    print("Test ur5 forward kinematics.")
     urdf = os.path.join(TEST_DIR, "ur5.urdf")
     pk_chain = pk.build_serial_chain_from_urdf(open(urdf).read(), 'ee_link', 'base_link')
     th = [0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0]
@@ -295,11 +368,14 @@ def test_ur5_fk():
                   [1.00000000e+00, 1.79489651e-09, 0.00000000e+00, 1.91450000e-01],
                   [1.79489651e-09, -1.00000000e+00, -3.58979312e-09, 6.00114361e-01],
                   [0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]
+        print("\tImport Error")
 
     ret = pk_chain.forward_kinematics(th, end_only=True)
-    print(ret.get_matrix())
+    print("\t",ret.get_matrix())
     ik_ret = torch.tensor(ik_ret, dtype=ret.dtype)
-    print(ik_ret)
+    print("\t",ik_ret)
+    if torch.allclose(ik_ret, ret.get_matrix(), atol=1e-6):
+        print("\tur5 Forward Kinematics functional.")
     assert torch.allclose(ik_ret, ret.get_matrix(), atol=1e-6)
 
 
@@ -317,3 +393,4 @@ if __name__ == "__main__":
     # test_fk_mjcf_humanoid()
     test_mjcf_slide_joint_parsing()
     test_ur5_fk()
+    print("All tests passed.")

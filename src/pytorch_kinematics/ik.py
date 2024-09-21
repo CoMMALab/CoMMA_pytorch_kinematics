@@ -8,6 +8,7 @@ import inspect
 from matplotlib import pyplot as plt, cm as cm
 
 
+
 class IKSolution:
     def __init__(self, dof, num_problems, num_retries, pos_tolerance, rot_tolerance, device="cpu"):
         self.iterations = 0

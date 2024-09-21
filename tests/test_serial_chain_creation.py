@@ -83,4 +83,5 @@ base_link
 
 
 if __name__ == "__main__":
+    print("Test serial trees match specifications of widowx/wx250s.urdf")
     test_extract_serial_chain_from_tree()

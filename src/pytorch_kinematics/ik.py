@@ -1,12 +1,13 @@
 from pytorch_kinematics.chain import SerialChain
 from pytorch_kinematics.transforms import Transform3d
 from pytorch_kinematics.transforms import rotation_conversions
+from pytorch_kinematics.interpolation import interpolate_poses
 from typing import NamedTuple, Union, Optional, Callable
 import typing
 import torch
 import inspect
 from matplotlib import pyplot as plt, cm as cm
-
+from typing import List
 
 
 class IKSolution:
@@ -280,7 +281,25 @@ class PseudoInverseIK(InverseKinematics):
         dq = J.transpose(1, 2) @ A
         return dq
 
-    def solve(self, target_poses: Transform3d) -> IKSolution:
+
+    # TODO: Check if results match previous function
+    def compute_dq_batch(self, Js, dxs):
+        # lambda^2 * I (lambda^2 is regularization)
+        reg = self.regularization * torch.eye(6, device=self.device, dtype=self.dtype).unsqueeze(0)  # Shape (1, 6, 6)
+
+        # JJ^T + lambda^2 * I for each J
+        tmpA = Js @ Js.transpose(1, 2) + reg  # Shape (N, 6, 6)
+
+        # Solve for A: (JJ^T + lambda^2I) A = dx for each dx
+        A = torch.linalg.solve(tmpA, dxs)  # Shape (N, 6)
+
+        # dq = J^T (JJ^T + lambda^2I)^-1 dx
+        dq = Js.transpose(1, 2) @ A.unsqueeze(2)  # Shape (N, 6, 1), then will broadcast
+
+        return dq.squeeze(2)  # Return shape (N, 6)
+
+
+    def solve(self, target_poses: Transform3d) -> IKSolution :
         self.clear()
 
         target = target_poses.get_matrix()
@@ -295,6 +314,16 @@ class PseudoInverseIK(InverseKinematics):
         sol = IKSolution(self.dof, M, self.num_retries, self.pos_tolerance, self.rot_tolerance, device=self.device)
 
         q = self.initial_config
+        # print("FLAG")
+        # print(q)
+        # print(q.shape)
+        # print(type(q))
+        # print("---------------------")
+        # print(target_poses)
+        # print(target_poses.scale)
+        # print(target_poses.dtype)
+
+        
         if q.numel() == M * self.dof * self.num_retries:
             q = q.reshape(-1, self.dof)
         elif q.numel() == self.dof * self.num_retries:
@@ -332,7 +361,6 @@ class PseudoInverseIK(InverseKinematics):
                 dq = self.compute_dq(J, dx)
                 dq = dq.squeeze(2)
 
-            improvement = None
             if optimizer is not None:
                 q.grad = -dq
                 optimizer.step()
@@ -408,7 +436,152 @@ class PseudoInverseIK(InverseKinematics):
 
         if i == self.max_iterations - 1:
             sol.update(q, self.err_all, use_keep_mask=False)
+        
         return sol
+
+    def batch_solve(self, target_poses: Transform3d) -> List[IKSolution]:
+        self.clear()
+
+        target = target_poses.get_matrix()
+
+    def iterative_interpolation_solve(self,start_poses, target_poses: Transform3d, n) -> List[IKSolution]:
+        interpolated_tfs = interpolate_poses(start_poses, target_poses, n)
+        target_poses = [start_poses] + interpolated_tfs + [target_poses]
+
+        self.clear()
+        # Initialize a list to store solutions between consecutive poses
+        solutions = []
+
+        # Ensure there are at least two poses to compute solutions between them
+        if len(target_poses) < 2:
+            raise ValueError("At least two poses are required to compute solutions between poses.")
+        q = self.initial_config
+        # Loop through consecutive pairs of poses (i.e., between i and i+1)
+        for i in range(1,len(target_poses)):
+            
+            goal_pose = target_poses[i].get_matrix()
+
+            M = goal_pose.shape[0] 
+
+            goal_pos = goal_pose[:, :3, 3]
+
+            # Extract rotations from start and goal poses and convert to quaternions
+            goal_wxyz = rotation_conversions.matrix_to_quaternion(goal_pose[:, :3, :3])
+
+            sol = IKSolution(self.dof, M, self.num_retries, self.pos_tolerance, self.rot_tolerance, device=self.device)
+         
+            if q.numel() == M * self.dof * self.num_retries:
+                q = q.reshape(-1, self.dof)
+            elif q.numel() == self.dof * self.num_retries:
+                q = self.initial_config.repeat(M, 1)
+            elif q.numel() == self.dof:
+                q = q.unsqueeze(0).repeat(M * self.num_retries, 1)
+            else:
+                raise ValueError(f"initial_config must have shape ({M}, {self.num_retries}, {self.dof}) or ({self.num_retries}, {self.dof})")
+
+            if self.debug:
+                pos_errors = []
+                rot_errors = []
+
+            optimizer = None
+            if inspect.isclass(self.optimizer_method) and issubclass(self.optimizer_method, torch.optim.Optimizer):
+                q.requires_grad = True
+                optimizer = torch.optim.Adam([q], lr=self.lr)
+
+            for iteration in range(self.max_iterations):
+                with torch.no_grad():
+                    if not sol.remaining.any():
+                        break
+                    sol.iterations += 1
+
+                    # Compute forward kinematics and Jacobian
+                    J, m = self.chain.jacobian(q, ret_eef_pose=True)
+                    m = m.view(-1, self.num_retries, 4, 4)
+
+                    # Compute the delta pose between start and goal
+                    dx, pos_diff, rot_diff = delta_pose(m, goal_pos, goal_wxyz)
+
+                    # Damped least squares method
+                    dq = self.compute_dq(J, dx)
+                    dq = dq.squeeze(2)
+
+                if optimizer is not None:
+                    q.grad = -dq
+                    optimizer.step()
+                    optimizer.zero_grad()
+                else:
+                    with torch.no_grad():
+                        if self.line_search is not None:
+                            lr, improvement = self.line_search.do_line_search(self.chain, q, dq, goal_pos, goal_wxyz,
+                                                                            dx, problem_remaining=sol.remaining)
+                            lr = lr.unsqueeze(1)
+                        else:
+                            lr = self.lr
+                        q = q + lr * dq
+
+                with torch.no_grad():
+                    self.err_all = dx.squeeze()
+                    self.err = self.err_all.norm(dim=-1)
+                    sol.update(q, self.err_all, use_keep_mask=self.early_stopping_any_converged)
+
+                    if self.early_stopping_no_improvement is not None:
+                        if self.no_improve_counter is None:
+                            self.no_improve_counter = torch.zeros_like(self.err)
+                        else:
+                            if self.err_min is None:
+                                self.err_min = self.err.clone()
+                            else:
+                                improved = self.err < self.err_min
+                                self.err_min[improved] = self.err[improved]
+
+                                self.no_improve_counter[improved] = 0
+                                self.no_improve_counter[~improved] += 1
+
+                                could_improve = self.no_improve_counter <= self.early_stopping_no_improvement_patience
+                                could_improve = could_improve.reshape(-1, self.num_retries)
+                                if self.early_stopping_no_improvement == "all":
+                                    could_improve = could_improve.all(dim=1)
+                                elif self.early_stopping_no_improvement == "any":
+                                    could_improve = could_improve.any(dim=1)
+                                elif isinstance(self.early_stopping_no_improvement, float):
+                                    ratio_improved = could_improve.sum(dim=1) / self.num_retries
+                                    could_improve = ratio_improved > self.early_stopping_no_improvement
+                                sol.update_remaining_with_keep_mask(could_improve)
+
+                    if self.debug:
+                        pos_errors.append(pos_diff.reshape(-1, 3).norm(dim=1))
+                        rot_errors.append(rot_diff.reshape(-1, 3).norm(dim=1))
+
+            if self.debug:
+                fig, ax = plt.subplots(ncols=2, figsize=(10, 5))
+                pos_e = torch.stack(pos_errors, dim=0).cpu()
+                rot_e = torch.stack(rot_errors, dim=0).cpu()
+                ax[0].set_ylim(0, 1.)
+                ignore = torch.isnan(rot_e)
+                axis_max = rot_e[~ignore].max().item()
+                ax[1].set_ylim(0, axis_max * 1.1)
+                ax[0].set_xlim(0, self.max_iterations - 1)
+                ax[1].set_xlim(0, self.max_iterations - 1)
+                draw_max = min(50, pos_e.shape[1])
+                for b in range(draw_max):
+                    c = (b + 1) / draw_max
+                    ax[0].plot(pos_e[:, b], c=cm.GnBu(c))
+                    ax[1].plot(rot_e[:, b], c=cm.GnBu(c))
+                ax[0].set_ylabel("position error")
+                ax[1].set_xlabel("iteration")
+                ax[1].set_ylabel("rotation error")
+                plt.show()
+
+            if iteration == self.max_iterations - 1:
+                sol.update(q, self.err_all, use_keep_mask=False)
+
+            # Append solution for the current pair of consecutive poses
+            solutions.append(sol)  
+            print(q)
+
+        # Return the list of solutions between consecutive poses
+        return solutions
+
 
 
 class PseudoInverseIKWithSVD(PseudoInverseIK):

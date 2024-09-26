@@ -9,6 +9,7 @@ import pytorch_seed
 
 import pybullet as p
 import pybullet_data
+import time
 
 visualize = True
 
@@ -40,8 +41,8 @@ def create_test_chain(robot="kuka_iiwa", device="cpu"):
         raise NotImplementedError(f"Robot {robot} not implemented")
     return chain, urdf
 
-def test_jacobian_follower(robot="kuka_iiwa", skip=False):
-    pytorch_seed.seed(2)
+def test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa", skip=False,seed=3):
+    pytorch_seed.seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
     chain, urdf = create_test_chain(robot=robot, device=device)
@@ -169,8 +170,163 @@ def test_jacobian_follower(robot="kuka_iiwa", skip=False):
             while True:
                 p.stepSimulation()
 
-def test_single_robot_ik_visualize(robot="kuka_iiwa", num_retries=10, max_iterations = 10, skip=False):
-    pytorch_seed.seed(3)
+def test_multiple_robot_ik_jacobian_follower_interpolation(robot="kuka_iiwa", skip=False, n=10, seed=3):
+    pytorch_seed.seed(seed)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    search_path = pybullet_data.getDataPath()
+    chain, urdf = create_test_chain(robot=robot, device=device)
+
+    # robot frame
+    pos = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rob_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
+
+    # world frame goal
+    M = 1000
+    # generate random goal joint angles (so these are all achievable)
+    # use the joint limits to generate random joint angles
+    lim = torch.tensor(chain.get_joint_limits(), device=device)
+    goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
+
+    # get ee pose (in robot frame)
+    goal_in_rob_frame_tf = chain.forward_kinematics(goal_q)
+
+    # transform to world frame for visualization
+    goal_tf = rob_tf.compose(goal_in_rob_frame_tf)
+    goal = goal_tf.get_matrix()
+    goal_pos = goal[..., :3, 3]
+    goal_rot = pk.matrix_to_euler_angles(goal[..., :3, :3], "XYZ")
+
+    num_retries = 10
+    ik = pk.PseudoInverseIK(chain, max_iterations=30, num_retries=num_retries,
+                            joint_limits=lim.T,
+                            early_stopping_any_converged=True,
+                            early_stopping_no_improvement="all",
+                            # line_search=pk.BacktrackingLineSearch(max_lr=0.2),
+                            debug=False,
+                            lr=0.2)
+
+    # do IK
+    timer_start = timer()
+    sol = ik.iterative_interpolation_solve(rob_tf, goal_in_rob_frame_tf, n)
+    interpolated_tfs = pk.interpolate_poses(rob_tf, goal_in_rob_frame_tf, n)
+    timer_end = timer()
+
+
+    total_converged = 0
+    total_iterations = 0
+    total_converged_any = 0
+    M_total = 0
+
+    for s in sol:
+        total_converged += s.converged.sum().item()  
+        M_total += s.converged.numel() 
+        total_iterations += s.iterations
+        total_converged_any += s.converged_any.sum().item()
+        
+
+    print("IK took %f seconds" % (timer_end - timer_start))
+    print("IK converged number: %d / %d" % (total_converged, M_total))
+    print("IK took %d iterations" % total_iterations)
+    print("IK solved %d / %d goals" % (total_converged_any, M))
+
+    # check that solving again produces the same solutions
+    sol_again = ik.iterative_interpolation_solve(rob_tf, goal_in_rob_frame_tf, n)
+    assert torch.allclose(sol[-1].solutions, sol_again[-1].solutions)
+    assert torch.allclose(sol[-1].converged, sol_again[-1].converged)
+
+    # visualize everything
+    if visualize:
+        p.connect(p.GUI)
+        p.setRealTimeSimulation(False)
+        p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
+        p.setAdditionalSearchPath(search_path)
+
+        yaw = 90
+        pitch = -65
+        # dist = 1.
+        dist = 2.4
+        target = np.array([2., 1.5, 0])
+        p.resetDebugVisualizerCamera(dist, yaw, pitch, target)
+
+        plane_id = p.loadURDF("plane.urdf", [0, 0, 0], useFixedBase=True)
+        p.changeVisualShape(plane_id, -1, rgbaColor=[0.3, 0.3, 0.3, 1])
+
+        # make 1 per retry with positional offsets
+        robots = []
+        num_robots = 16
+        # 4x4 grid position offset
+        offset = 1.0
+        m = rob_tf.get_matrix()
+        pos = m[0, :3, 3]
+        rot = m[0, :3, :3]
+        quat = pk.matrix_to_quaternion(rot)
+        pos = pos.cpu().numpy()
+        rot = pk.wxyz_to_xyzw(quat).cpu().numpy()
+
+        for i in range(num_robots):
+            this_offset = np.array([i % 4 * offset, i // 4 * offset, 0])
+            armId = p.loadURDF(urdf, basePosition=pos + this_offset, baseOrientation=rot, useFixedBase=True)
+            # _make_robot_translucent(armId, alpha=0.6)
+            robots.append({"id": armId, "offset": this_offset, "pos": pos})
+
+        show_max_num_retries_per_goal = 10
+
+        goals = []
+        # draw cone to indicate pose instead of sphere
+        visId = p.createVisualShape(p.GEOM_MESH, fileName="meshes/cone.obj", meshScale=1.0,
+                                    rgbaColor=[0., 1., 0., 0.5])
+        for i in range(num_robots):
+            goals.append(p.createMultiBody(baseMass=0, baseVisualShapeIndex=visId))
+
+        try:
+            # batch over goals with num_robots
+            for j in range(0, M, num_robots):
+                this_selection = slice(j, j + num_robots)
+                
+                r = goal_rot[:,this_selection]
+                print("Flag")
+                xyzw = pk.wxyz_to_xyzw(pk.matrix_to_quaternion(pk.euler_angles_to_matrix(r, "XYZ")))
+
+                solutions = [s.solutions[this_selection, :, :] for s in sol]
+                converged = torch.cat([s.converged[this_selection, :] for s in sol], dim=0)
+
+                # print how many retries converged for this one
+
+                # TODO: Check that this converged value is right
+                print("Goal %d to %d converged %d / %d" % (j, j + num_robots, converged.sum(), converged.numel()))
+                
+                # outer loop over retries, inner loop over goals (for each robot shown in parallel)
+                for ii in range(num_retries):
+                    if ii > show_max_num_retries_per_goal:
+                        break
+                    for jj in range(num_robots):
+                        p.resetBasePositionAndOrientation(goals[jj],
+                                                            goal_pos[j + jj].cpu().numpy() + robots[jj]["offset"],
+                                                            xyzw[jj].cpu().numpy())
+                        
+                        armId = robots[jj]["id"]
+                        for step in range(len(sol)):
+                            # print(step)
+                            q = solutions[step][jj, ii, :]
+                            for dof in range(q.shape[0]):
+                                p.resetJointState(armId, dof, q[dof])
+                            time.sleep(0.05)
+                        # for step in range(len(sol)):
+                    if skip:
+                        input("Press enter to continue")
+        except:
+            print("error has occurred")
+        if not skip:
+            p.disconnect()    
+        else:
+            while True:
+                p.stepSimulation()
+        
+
+
+def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, max_iterations = 10, skip=False, seed=3):
+    pytorch_seed.seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
     chain, urdf = create_test_chain(robot=robot, device=device)
@@ -280,8 +436,8 @@ def test_single_robot_ik_visualize(robot="kuka_iiwa", num_retries=10, max_iterat
         while True:
             p.stepSimulation()
 
-def test_single_robot_ik_visualize_interpolation(robot="kuka_iiwa", num_retries=10, max_iterations=10, skip=False, n=10):
-    pytorch_seed.seed(3)
+def test_single_robot_jacobian_follower_ik_interpolation(robot="kuka_iiwa", num_retries=10, max_iterations=10, skip=False, n=10, seed=3):
+    pytorch_seed.seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
     chain, urdf = create_test_chain(robot=robot, device=device)
@@ -293,7 +449,7 @@ def test_single_robot_ik_visualize_interpolation(robot="kuka_iiwa", num_retries=
     
 
     # world frame goal
-    M = 1  # Only testing with a single goal
+    M = 2  # Only testing with a single goal
     lim = torch.tensor(chain.get_joint_limits(), device=device)
     goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
 
@@ -325,7 +481,7 @@ def test_single_robot_ik_visualize_interpolation(robot="kuka_iiwa", num_retries=
                             lr=0.2)
 
     # Solve IK for all interpolated transforms (batch solution)
-    sol = ik.iterative_interpolation_solve(all_tfs)
+    sol = ik.iterative_interpolation_solve(start_tf, end_tf, n)
     # print(len(all_tfs))
     # print(len(sol))
     # print("IK converged number: %d / %d" % (sol.converged.sum(), sol.converged.numel()))
@@ -398,7 +554,7 @@ def test_single_robot_ik_visualize_interpolation(robot="kuka_iiwa", num_retries=
             pos_error, rot_error = pk.compute_error(all_tfs[step+1], end_effector_tf)
 
             print(f"Step {step+1}/{len(all_tfs)} | IK solution attempt {ii+1}/{num_retries}")
-            print(f"Position Error: {pos_error.item():.2f} meters")
+            print(f"Position Error: {pos_error[0].item():.2f} meters")
             print(f"Rotation Error: {rot_error.item():.2f} radians")
             # write_to_csv(pos_error.item(), rot_error.item(), n, max_iterations, "interpolation.csv")
             # write_to_csv_with_step(pos_error.item(), rot_error.item(), n, max_iterations, step + 1, "steps.csv")
@@ -407,9 +563,11 @@ def test_single_robot_ik_visualize_interpolation(robot="kuka_iiwa", num_retries=
                 input("Press Enter to continue to the next step")
         if skip:
             input("Press Enter to continue to the next solution")
-    p.disconnect()
-    # while True:
-    #     p.stepSimulation()
+    if not skip:
+        p.disconnect()    
+    else:
+        while True:
+            p.stepSimulation()
 
 
 def test_ik_in_place_no_err(robot="kuka_iiwa"):
@@ -461,8 +619,9 @@ if __name__ == "__main__":
     # test_jacobian_follower(robot="kuka_iiwa")
     # test_ik_in_place_no_err(robot="kuka_iiwa")
     # print("Testing widowx IK")
-    # test_jacobian_follower(robot="widowx")
+    # test_multiple_robot_ik_jacobian_follower(robot="widowx")
+    test_multiple_robot_ik_jacobian_follower_interpolation(robot="widowx")
     # test_ik_in_place_no_err(robot="widowx")
     mi=10
-    # test_single_robot_ik_visualize(robot="widowx", num_retries=10, max_iterations=mi, skip=True)
-    test_single_robot_ik_visualize_interpolation(robot="widowx", num_retries=10, max_iterations=mi, skip=True)
+    # test_single_robot_ik_jacobian_follower(robot="widowx", num_retries=10, max_iterations=mi, skip=True)
+    # test_single_robot_jacobian_follower_ik_interpolation(robot="widowx", num_retries=10, max_iterations=mi, skip=True)

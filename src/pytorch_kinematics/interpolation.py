@@ -1,46 +1,51 @@
+import pytorch_kinematics as pk
 import torch
 
+def interpolate_poses(start_transforms, end_transforms, n):
+    device = start_transforms.device
+    
+    # Extract start and end transformation matrices
+    start_matrices = start_transforms.get_matrix()  # (batch_size, 4, 4)
+    end_matrices = end_transforms.get_matrix()      # (batch_size, 4, 4)
+    if start_matrices.shape[0] == 1 and end_matrices.shape[0] > 1:
+        start_matrices = start_matrices.repeat(end_matrices.shape[0], 1, 1)
 
-def normalize_quaternion(quat):
-    norm = torch.norm(quat, p=2, dim=-1, keepdim=True)
-    return quat / norm
+    # print(start_matrices.shape)
+    # print(end_matrices.shape)
+    
+    # Extract positions (last column) and rotations (upper 3x3 part) from the transformation matrices
+    start_pos = start_matrices[..., :3, 3]  # (batch_size, 3)
+    end_pos = end_matrices[..., :3, 3]      # (batch_size, 3)
+    
+    # print(start_matrices[..., :3, :3].shape)
+    # print(end_matrices[..., :3, :3].shape)
 
-def slerp(start_quat, end_quat, t):
-    # Ensure quaternions are normalized
-    start_quat = normalize_quaternion(start_quat)
-    end_quat = normalize_quaternion(end_quat)
-    
-    # Squeeze dimensions if they are singleton dimensions
-    if start_quat.dim() > 1:
-        start_quat = start_quat.squeeze(0)
-        end_quat = end_quat.squeeze(0)
-    
-    # Compute the dot product
-    dot = torch.sum(start_quat * end_quat, dim=-1)
-    
-    # Clamp the dot product to avoid numerical issues
-    dot = torch.clamp(dot, min=-1.0, max=1.0)
-    
-    # Compute the angle between the quaternions
-    theta_0 = torch.acos(dot)
-    theta = theta_0 * t
-    
-    # Compute sin(theta) and sin(theta_0 - theta)
-    sin_theta = torch.sin(theta)
-    sin_theta_0 = torch.sin(theta_0)
-    
-    # Handle the case when sin(theta_0) is zero
-    coeff_0 = torch.where(sin_theta_0 < 1e-6, torch.ones_like(sin_theta), (torch.sin(theta_0 - theta) / sin_theta_0))
-    coeff_1 = torch.where(sin_theta_0 < 1e-6, torch.zeros_like(sin_theta), (torch.sin(theta) / sin_theta_0))
-    
-    # Perform SLERP interpolation
-    interpolated_quat = (coeff_0.unsqueeze(0) * start_quat) + (coeff_1.unsqueeze(0) * end_quat)
-    
-    # Normalize the result
-    interpolated_quat = normalize_quaternion(interpolated_quat)
-    
-    # Add back the batch dimension if it was squeezed
-    if start_quat.dim() == 1:
-        interpolated_quat = interpolated_quat.unsqueeze(0)
-    
-    return interpolated_quat
+    start_rot = pk.matrix_to_quaternion(start_matrices[..., :3, :3])  # (batch_size, 4)
+    end_rot = pk.matrix_to_quaternion(end_matrices[..., :3, :3])      # (batch_size, 4)
+
+    interpolated_poses = []
+
+    # print(start_rot.shape)
+    # print(end_rot.shape)
+
+    # Interpolation steps
+    for t in torch.linspace(0, 1, n, device=device):  # (n,)
+        # LERP for position (batch_size, 3)
+        interp_pos = (1 - t) * start_pos + t * end_pos
+
+        # SLERP for quaternion rotation (batch_size, 4)
+        interp_rot = pk.quaternion_slerp(start_rot, end_rot, t)
+
+        # Reconstruct the rotation matrices from the interpolated quaternions (batch_size, 3, 3)
+        interp_rot_matrices = pk.quaternion_to_matrix(interp_rot)
+
+        # Construct the interpolated transformation matrices (batch_size, 4, 4)
+        interp_matrices = torch.eye(4, device=device).unsqueeze(0).repeat(start_matrices.shape[0], 1, 1)  # (batch_size, 4, 4)
+        interp_matrices[..., :3, :3] = interp_rot_matrices
+        interp_matrices[..., :3, 3] = interp_pos
+
+        # Create a batch of interpolated Transform3d from the matrices
+        interp_transforms = pk.Transform3d(matrix=interp_matrices)
+        interpolated_poses.append(interp_transforms)
+    # raise NameError
+    return interpolated_poses

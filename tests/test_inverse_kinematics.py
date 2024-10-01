@@ -25,6 +25,56 @@ def _make_robot_translucent(robot_id, alpha=0.4):
     for link in visual_data:
         make_transparent(link)
 
+def test_coalesce_and_reshape():
+    # Step 1: Create a sample IKSolution
+    dof = 6
+    num_problems = 10
+    num_retries = 5
+    pos_tolerance = 1e-3
+    rot_tolerance = 1e-3
+    device = "cpu"
+
+    # Initialize a sample IKSolution with random data
+    original_solution = pk.IKSolution(dof=dof, num_problems=num_problems, num_retries=num_retries,
+                                   pos_tolerance=pos_tolerance, rot_tolerance=rot_tolerance, device=device)
+    
+    # Fill the original_solution tensors with random data
+    original_solution.solutions = torch.rand((num_problems, num_retries, dof), device=device)
+    original_solution.remaining = torch.randint(0, 2, (num_problems,), dtype=torch.bool, device=device)
+    original_solution.err_pos = torch.rand((num_problems, num_retries), device=device)
+    original_solution.err_rot = torch.rand_like(original_solution.err_pos)
+    original_solution.converged_pos = torch.randint(0, 2, (num_problems, num_retries), dtype=torch.bool, device=device)
+    original_solution.converged_rot = torch.randint(0, 2, (num_problems, num_retries), dtype=torch.bool, device=device)
+    original_solution.converged = torch.randint(0, 2, (num_problems, num_retries), dtype=torch.bool, device=device)
+    original_solution.converged_pos_any = torch.randint(0, 2, (num_problems,), dtype=torch.bool, device=device)
+    original_solution.converged_rot_any = torch.randint(0, 2, (num_problems,), dtype=torch.bool, device=device)
+    original_solution.converged_any = torch.randint(0, 2, (num_problems,), dtype=torch.bool, device=device)
+
+    # Step 2: Split the original IKSolution into smaller IKSolutions
+    M = 3  # Number of splits
+    split_solutions = original_solution.reshape_solutions(M)
+
+    # Step 3: Coalesce the smaller IKSolutions back into one
+    coalesced_solution = split_solutions[0]
+    print(f"Length of Split Solutions: {len(split_solutions)}")
+    for i in range(1,len(split_solutions)):
+        coalesced_solution.coalesce_solutions(split_solutions[i])
+
+    # Step 4: Verify that all the data matches the original
+    assert torch.equal(original_solution.solutions, coalesced_solution.solutions), "Solutions tensor does not match!"
+    assert torch.equal(original_solution.remaining, coalesced_solution.remaining), "Remaining tensor does not match!"
+    assert torch.equal(original_solution.err_pos, coalesced_solution.err_pos), "Error position tensor does not match!"
+    assert torch.equal(original_solution.err_rot, coalesced_solution.err_rot), "Error rotation tensor does not match!"
+    assert torch.equal(original_solution.converged_pos, coalesced_solution.converged_pos), "Converged position does not match!"
+    assert torch.equal(original_solution.converged_rot, coalesced_solution.converged_rot), "Converged rotation does not match!"
+    assert torch.equal(original_solution.converged, coalesced_solution.converged), "Converged tensor does not match!"
+    assert torch.equal(original_solution.converged_pos_any, coalesced_solution.converged_pos_any), "Converged position (any) does not match!"
+    assert torch.equal(original_solution.converged_rot_any, coalesced_solution.converged_rot_any), "Converged rotation (any) does not match!"
+    assert torch.equal(original_solution.converged_any, coalesced_solution.converged_any), "Converged (any) does not match!"
+
+    print("Test passed: All tensors match after reshaping and coalescing.")
+
+
 def create_test_chain(robot="kuka_iiwa", device="cpu"):
     if robot == "kuka_iiwa":
         urdf = "kuka_iiwa/model.urdf"
@@ -40,6 +90,50 @@ def create_test_chain(robot="kuka_iiwa", device="cpu"):
     else:
         raise NotImplementedError(f"Robot {robot} not implemented")
     return chain, urdf
+
+def test_ik_in_place_no_err(robot="kuka_iiwa"):
+    pytorch_seed.seed(2)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # device = "cpu"
+    chain, urdf = create_test_chain(robot=robot, device=device)
+    # robot frame
+    pos = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rob_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
+
+    # goal equal to current configuration
+    lim = torch.tensor(chain.get_joint_limits(), device=device)
+    cur_q = torch.rand(lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
+    M = 1
+    goal_q = cur_q.unsqueeze(0).repeat(M, 1)
+
+    # get ee pose (in robot frame)
+    goal_in_rob_frame_tf = chain.forward_kinematics(goal_q)
+
+    # transform to world frame for visualization
+    goal_tf = rob_tf.compose(goal_in_rob_frame_tf)
+    goal = goal_tf.get_matrix()
+    goal_pos = goal[..., :3, 3]
+    goal_rot = pk.matrix_to_euler_angles(goal[..., :3, :3], "XYZ")
+
+    ik = pk.PseudoInverseIK(chain, max_iterations=30, num_retries=10,
+                            joint_limits=lim.T,
+                            early_stopping_any_converged=True,
+                            early_stopping_no_improvement="all",
+                            retry_configs=cur_q.reshape(1, -1),
+                            # line_search=pk.BacktrackingLineSearch(max_lr=0.2),
+                            debug=False,
+                            lr=0.2)
+
+    # do IK
+    sol = ik.solve(goal_in_rob_frame_tf)
+    assert sol.converged.sum() == M
+    assert torch.allclose(sol.solutions[0][0], cur_q)
+    assert torch.allclose(sol.err_pos[0], torch.zeros(1, device=device), atol=1e-6)
+    assert torch.allclose(sol.err_rot[0], torch.zeros(1, device=device), atol=1e-6)
+
+
+
 
 def test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa", skip=False,seed=3):
     pytorch_seed.seed(seed)
@@ -170,7 +264,7 @@ def test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa", skip=False,seed=
             while True:
                 p.stepSimulation()
 
-def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka_iiwa", skip=False, n=10, seed=3):
+def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka_iiwa", skip=False, n=10, seed=3, delay=False):
     pytorch_seed.seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
@@ -285,7 +379,6 @@ def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka
                 this_selection = slice(j, j + num_robots)
                 
                 r = goal_rot[:,this_selection]
-                print("Flag")
                 xyzw = pk.wxyz_to_xyzw(pk.matrix_to_quaternion(pk.euler_angles_to_matrix(r, "XYZ")))
 
                 solutions = [s.solutions[this_selection, :, :] for s in sol]
@@ -311,7 +404,8 @@ def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka
                             q = solutions[step][jj, ii, :]
                             for dof in range(q.shape[0]):
                                 p.resetJointState(armId, dof, q[dof])
-                            # time.sleep(0.05)
+                            if delay:
+                                time.sleep(0.05)
                         # for step in range(len(sol)):
                     if skip:
                         input("Press enter to continue")
@@ -363,20 +457,32 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
     # do IK
     timer_start = timer()
     sol = ik.parallel_solve(rob_tf, goal_in_rob_frame_tf, n)
-    tensor_list  = sol.solutions.reshape(sol.solutions.shape[0] // M,M, 10, 6)
-    # interpolated_tfs = pk.interpolate_poses(rob_tf, goal_in_rob_frame_tf, n)
+    interpolated_tfs = pk.interpolate_poses(rob_tf, goal_in_rob_frame_tf, n)
+
     timer_end = timer()
 
 
+    total_converged = 0
+    total_iterations = 0
+    total_converged_any = 0
+    M_total = 0
+
+    for s in sol:
+        total_converged += s.converged.sum().item()  
+        M_total += s.converged.numel() 
+        total_iterations += s.iterations
+        total_converged_any += s.converged_any.sum().item()
+        
+
     print("IK took %f seconds" % (timer_end - timer_start))
-    print("IK converged number: %d / %d" % (sol.converged.sum(), sol.converged.numel()))
-    print("IK took %d iterations" % sol.iterations)
-    print("IK solved %d / %d goals" % (sol.converged_any.sum(), M))
+    print("IK converged number: %d / %d" % (total_converged, M_total))
+    print("IK took %d iterations" % total_iterations)
+    print("IK solved %d / %d goals" % (total_converged_any, M))
 
     # check that solving again produces the same solutions
     sol_again = ik.parallel_solve(rob_tf, goal_in_rob_frame_tf, n)
-    assert torch.allclose(sol.solutions, sol_again.solutions)
-    assert torch.allclose(sol.converged, sol_again.converged)
+    assert torch.allclose(sol[-1].solutions, sol_again[-1].solutions)
+    assert torch.allclose(sol[-1].converged, sol_again[-1].converged)
 
     # visualize everything
     if visualize:
@@ -428,11 +534,10 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
                 this_selection = slice(j, j + num_robots)
                 
                 r = goal_rot[:,this_selection]
-                print("Flag")
                 xyzw = pk.wxyz_to_xyzw(pk.matrix_to_quaternion(pk.euler_angles_to_matrix(r, "XYZ")))
 
-                solutions = [s[this_selection, :, :] for s in tensor_list]
-                converged = sol.converged[this_selection, :]
+                solutions = [s.solutions[this_selection, :, :] for s in sol]
+                converged = torch.cat([s.converged[this_selection, :] for s in sol], dim=0)
 
                 # print how many retries converged for this one
 
@@ -449,13 +554,12 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
                                                             xyzw[jj].cpu().numpy())
                         
                         armId = robots[jj]["id"]
-                        for step in range(len(solutions)):
-                            # print(step)
+                        for step in range(len(sol)):
                             q = solutions[step][jj, ii, :]
                             for dof in range(q.shape[0]):
                                 p.resetJointState(armId, dof, q[dof])
-                            time.sleep(0.05)
-                        # for step in range(len(sol)):
+                            if delay:
+                                time.sleep(0.05)
                     if skip:
                         input("Press enter to continue")
         except:
@@ -466,7 +570,7 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
             while True:
                 p.stepSimulation()
 
-def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, max_iterations = 10, skip=False, seed=3):
+def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, max_iterations = 10, skip=False, seed=3, delay=False):
     pytorch_seed.seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
@@ -582,7 +686,7 @@ def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, ma
             p.stepSimulation()
 
 
-def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_iiwa", num_retries=10, max_iterations=10, skip=False, n=10, seed=3):
+def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_iiwa", num_retries=10, max_iterations=10, skip=False, n=10, seed=3, delay=False):
     pytorch_seed.seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
@@ -602,7 +706,6 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
     # get ee pose (in robot frame)
     end_tf = chain.forward_kinematics(goal_q)
     
-    print("flag ")
     print("Start TF:",start_tf)
     interpolated_tfs = pk.interpolate_poses(start_tf, end_tf, n)
     print("Interpolated TFs:")
@@ -628,8 +731,7 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
 
     # Solve IK for all interpolated transforms (batch solution)
     sol = ik.iterative_interpolation_solve(start_tf, end_tf, n)
-    # print(len(all_tfs))
-    # print(len(sol))
+
     # print("IK converged number: %d / %d" % (sol.converged.sum(), sol.converged.numel()))
     # print("IK took %d iterations" % sol.iterations)
 
@@ -681,6 +783,8 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
         for dof in range(len(original_joint_states)):
                 p.resetJointState(armId, dof, original_joint_states[dof])
         for step in range(len(sol)):
+            if delay:
+                time.sleep(0.05)
             # Get IK solution for this transform
             # print(sol[step].solutions.shape)
             solutions = sol[step].solutions[0,:,:]           
@@ -720,7 +824,7 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
             p.stepSimulation()
 
 
-def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_iiwa", num_retries=10, max_iterations=10, skip=False, n=10, seed=3):
+def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_iiwa", num_retries=10, max_iterations=10, skip=False, n=10, seed=3, delay=False):
     pytorch_seed.seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
@@ -739,8 +843,7 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
 
     # get ee pose (in robot frame)
     end_tf = chain.forward_kinematics(goal_q)
-    
-    print("flag ")
+
     print("Start TF:",start_tf)
     interpolated_tfs = pk.interpolate_poses(start_tf, end_tf, n)
     print("Interpolated TFs:")
@@ -766,14 +869,8 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
 
     # Solve IK for all interpolated transforms (batch solution)
     sol = ik.parallel_solve(start_tf, end_tf, n)
-    # print("Flag")
-    # print(type(sol.solutions))
-    # print(sol.solutions)
-    tensor_list  = sol.solutions.reshape(sol.solutions.shape[0] // M,M, 10, 6)
-    # print(type(tensor_list[0]))
-    # print(tensor_list.shape)
-    # print(len(all_tfs))
-    # print(len(sol))
+    
+
     # print("IK converged number: %d / %d" % (sol.converged.sum(), sol.converged.numel()))
     # print("IK took %d iterations" % sol.iterations)
 
@@ -824,10 +921,12 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
         # Reset to the original joint states
         for dof in range(len(original_joint_states)):
                 p.resetJointState(armId, dof, original_joint_states[dof])
-        for step in range(len(tensor_list)):
+        for step in range(len(sol)):
+            if delay:
+                time.sleep(0.05)
             # Get IK solution for this transform
             # print(sol[step].solutions.shape)
-            solutions = tensor_list[step][0,:,:]           
+            solutions = sol[step].solutions[0,:,:]           
             
 
             # Apply the IK solution
@@ -864,60 +963,36 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
             p.stepSimulation()
 
 
-def test_ik_in_place_no_err(robot="kuka_iiwa"):
-    pytorch_seed.seed(2)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    # device = "cpu"
-    chain, urdf = create_test_chain(robot=robot, device=device)
-    # robot frame
-    pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rob_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
-
-    # goal equal to current configuration
-    lim = torch.tensor(chain.get_joint_limits(), device=device)
-    cur_q = torch.rand(lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
-    M = 1
-    goal_q = cur_q.unsqueeze(0).repeat(M, 1)
-
-    # get ee pose (in robot frame)
-    goal_in_rob_frame_tf = chain.forward_kinematics(goal_q)
-
-    # transform to world frame for visualization
-    goal_tf = rob_tf.compose(goal_in_rob_frame_tf)
-    goal = goal_tf.get_matrix()
-    goal_pos = goal[..., :3, 3]
-    goal_rot = pk.matrix_to_euler_angles(goal[..., :3, :3], "XYZ")
-
-    ik = pk.PseudoInverseIK(chain, max_iterations=30, num_retries=10,
-                            joint_limits=lim.T,
-                            early_stopping_any_converged=True,
-                            early_stopping_no_improvement="all",
-                            retry_configs=cur_q.reshape(1, -1),
-                            # line_search=pk.BacktrackingLineSearch(max_lr=0.2),
-                            debug=False,
-                            lr=0.2)
-
-    # do IK
-    sol = ik.solve(goal_in_rob_frame_tf)
-    assert sol.converged.sum() == M
-    assert torch.allclose(sol.solutions[0][0], cur_q)
-    assert torch.allclose(sol.err_pos[0], torch.zeros(1, device=device), atol=1e-6)
-    assert torch.allclose(sol.err_rot[0], torch.zeros(1, device=device), atol=1e-6)
-
-
 
 
 if __name__ == "__main__":
-    # print("Testing kuka_iiwa IK")
-    # test_jacobian_follower(robot="kuka_iiwa")
-    # test_ik_in_place_no_err(robot="kuka_iiwa")
-    # print("Testing widowx IK")
-    # test_multiple_robot_ik_jacobian_follower(robot="widowx")
-    # test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="widowx")
+    print("Testing coalescing functions")
+    test_coalesce_and_reshape()
+    print("_____________________________________________________")
+    print("Test in place no errors")
+    test_ik_in_place_no_err(robot="widowx")
+    print("_____________________________________________________")
+    test_ik_in_place_no_err(robot="kuka_iiwa")
+    print("Testing kuka_iiwa IK")
+    print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa")
+    print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka_iiwa", n=10, seed=3)
+    print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_iiwa", n=10, seed=3)
+    print("_____________________________________________________")
+    print("Testing widowx IK")
+    print("_____________________________________________________")
+    test_multiple_robot_ik_jacobian_follower(robot="widowx")
+    print("_____________________________________________________")
+    test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="widowx", n=10, seed=3)
+    print("_____________________________________________________")
     test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="widowx", n=10, seed=3)
-    # test_ik_in_place_no_err(robot="widowx")
+    print("_____________________________________________________")
     mi=1000
-    # test_single_robot_ik_jacobian_follower(robot="widowx", num_retries=10, max_iterations=mi, skip=True)
-    # test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="widowx", num_retries=10, max_iterations=mi, skip=True)
-    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi, skip=True)
+    test_single_robot_ik_jacobian_follower(robot="widowx", num_retries=10, max_iterations=mi)
+    print("_____________________________________________________")
+    test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
+    print("_____________________________________________________")
+    test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,skip=True)
+    print("_____________________________________________________")

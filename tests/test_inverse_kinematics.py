@@ -87,6 +87,12 @@ def create_test_chain(robot="kuka_iiwa", device="cpu"):
         full_urdf = urdf
         chain = pk.build_serial_chain_from_urdf(open(full_urdf, "rb").read(), "ee_gripper_link")
         chain = chain.to(device=device)
+    elif robot == "fp3_franka_hand":
+        urdf = "franka/fp3_franka_hand.urdf"
+        full_urdf = urdf
+        chain = pk.build_chain_from_urdf(open(full_urdf, mode="rb").read())
+        chain = pk.SerialChain(chain, "fp3_hand_tcp", "base")
+        chain = chain.to(device=device)
     else:
         raise NotImplementedError(f"Robot {robot} not implemented")
     return chain, urdf
@@ -140,6 +146,7 @@ def test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa", skip=False,seed=
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
     chain, urdf = create_test_chain(robot=robot, device=device)
+    
 
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
@@ -418,7 +425,7 @@ def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka
                 p.stepSimulation()
         
 
-def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_iiwa", skip=False, n=10, seed=3):
+def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_iiwa", skip=False, n=10, seed=3, delay=False):
     pytorch_seed.seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
@@ -829,6 +836,7 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
     device = "cuda" if torch.cuda.is_available() else "cpu"
     search_path = pybullet_data.getDataPath()
     chain, urdf = create_test_chain(robot=robot, device=device)
+    chain.print_tree()
      
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
@@ -879,6 +887,7 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
     p.setRealTimeSimulation(False)
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
     p.setAdditionalSearchPath(search_path)
+    print("flag",search_path)
 
     # Setup camera view
     yaw = 90
@@ -973,26 +982,36 @@ if __name__ == "__main__":
     test_ik_in_place_no_err(robot="widowx")
     print("_____________________________________________________")
     test_ik_in_place_no_err(robot="kuka_iiwa")
-    print("Testing kuka_iiwa IK")
-    print("_____________________________________________________")
+    # print("Testing kuka_iiwa IK")
+    # print("_____________________________________________________")
     # test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa")
-    print("_____________________________________________________")
+    # print("_____________________________________________________")
     # test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka_iiwa", n=10, seed=3)
-    print("_____________________________________________________")
+    # print("_____________________________________________________")
     # test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_iiwa", n=10, seed=3)
-    print("_____________________________________________________")
-    print("Testing widowx IK")
-    print("_____________________________________________________")
-    test_multiple_robot_ik_jacobian_follower(robot="widowx")
-    print("_____________________________________________________")
-    test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="widowx", n=10, seed=3)
-    print("_____________________________________________________")
-    test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="widowx", n=10, seed=3)
-    print("_____________________________________________________")
+    # print("_____________________________________________________")
+    # print("Testing widowx IK")
+    # print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower(robot="widowx")
+    # print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="widowx", n=10, seed=3,delay=True)
+    # print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="widowx", n=10, seed=3,delay=True)
+    # print("_____________________________________________________")
+    print("Testing fp3 Franka Hand")
+    # print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower(robot="fp3_franka_hand")
+    # print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="fp3_franka_hand", n=10, seed=3,delay=True)
+    # print("_____________________________________________________")
+    # test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="fp3_franka_hand", n=10, seed=3,delay=True)
+    # print("_____________________________________________________")
     mi=1000
-    test_single_robot_ik_jacobian_follower(robot="widowx", num_retries=10, max_iterations=mi)
-    print("_____________________________________________________")
-    test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
-    print("_____________________________________________________")
-    test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,skip=True)
-    print("_____________________________________________________")
+    # test_single_robot_ik_jacobian_follower(robot="widowx", num_retries=10, max_iterations=mi)
+    # print("_____________________________________________________")
+    # test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
+    # print("_____________________________________________________")
+    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
+    # print("_____________________________________________________")
+    test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=1, max_iterations=mi,skip=True)
+    # print("_____________________________________________________")

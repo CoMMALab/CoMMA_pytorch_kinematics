@@ -181,6 +181,29 @@ def test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa", skip=False,seed=
     # do IK
     timer_start = timer()
     sol = ik.solve(goal_in_rob_frame_tf)
+
+    # Initialize lists to store err_pos and err_rot tensors
+    err_pos_list = []
+    err_rot_list = []
+
+    # Iterate through each IKSolution and accumulate the tensors
+    for s in sol:
+        err_pos_list.append(s.err_pos)
+        err_rot_list.append(s.err_rot)
+
+    # Stack tensors along a new dimension to accumulate them
+    accumulated_err_pos = torch.stack(err_pos_list)
+    accumulated_err_rot = torch.stack(err_rot_list)
+    
+    # Compute the average position and rotation errors
+    average_err_pos = torch.mean(accumulated_err_pos)
+    average_err_rot = torch.mean(accumulated_err_rot)
+
+    # Print the results
+    print("\n\nAverage Position Error:", average_err_pos.item())
+    print("Average Rotation Error:", average_err_rot.item())
+
+
     timer_end = timer()
     print("IK took %f seconds" % (timer_end - timer_start))
     print("IK converged number: %d / %d" % (sol.converged.sum(), sol.converged.numel()))
@@ -312,6 +335,27 @@ def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka
     sol = ik.iterative_interpolation_solve(rob_tf, goal_in_rob_frame_tf, n)
     interpolated_tfs = pk.interpolate_poses(rob_tf, goal_in_rob_frame_tf, n)
     timer_end = timer()
+
+    # Initialize lists to store err_pos and err_rot tensors
+    err_pos_list = []
+    err_rot_list = []
+
+    # Iterate through each IKSolution and accumulate the tensors
+    for s in sol:
+        err_pos_list.append(s.err_pos)
+        err_rot_list.append(s.err_rot)
+
+    # Stack tensors along a new dimension to accumulate them
+    accumulated_err_pos = torch.stack(err_pos_list)
+    accumulated_err_rot = torch.stack(err_rot_list)
+    
+    # Compute the average position and rotation errors
+    average_err_pos = torch.mean(accumulated_err_pos)
+    average_err_rot = torch.mean(accumulated_err_rot)
+
+    # Print the results
+    print("\n\nAverage Position Error:", average_err_pos.item())
+    print("Average Rotation Error:", average_err_rot.item())
 
 
     total_converged = 0
@@ -463,8 +507,30 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
 
     # do IK
     timer_start = timer()
-    sol = ik.parallel_solve(rob_tf, goal_in_rob_frame_tf, n)
+    sol = ik.parallel_interpolation_solve(rob_tf, goal_in_rob_frame_tf, n)
     interpolated_tfs = pk.interpolate_poses(rob_tf, goal_in_rob_frame_tf, n)
+
+    # Initialize lists to store err_pos and err_rot tensors
+    err_pos_list = []
+    err_rot_list = []
+
+    # Iterate through each IKSolution and accumulate the tensors
+    for s in sol:
+        err_pos_list.append(s.err_pos)
+        err_rot_list.append(s.err_rot)
+
+    # Stack tensors along a new dimension to accumulate them
+    accumulated_err_pos = torch.stack(err_pos_list)
+    accumulated_err_rot = torch.stack(err_rot_list)
+    
+    # Compute the average position and rotation errors
+    average_err_pos = torch.mean(accumulated_err_pos)
+    average_err_rot = torch.mean(accumulated_err_rot)
+
+    # Print the results
+    print("\n\nAverage Position Error:", average_err_pos.item())
+    print("Average Rotation Error:", average_err_rot.item())
+
 
     timer_end = timer()
 
@@ -487,7 +553,7 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
     print("IK solved %d / %d goals" % (total_converged_any, M))
 
     # check that solving again produces the same solutions
-    sol_again = ik.parallel_solve(rob_tf, goal_in_rob_frame_tf, n)
+    sol_again = ik.parallel_interpolation_solve(rob_tf, goal_in_rob_frame_tf, n)
     assert torch.allclose(sol[-1].solutions, sol_again[-1].solutions)
     assert torch.allclose(sol[-1].converged, sol_again[-1].converged)
 
@@ -612,7 +678,8 @@ def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, ma
 
     # do IK
     sol = ik.solve(goal_in_rob_frame_tf)
-    print("IK converged number: %d / %d" % (sol.converged.sum(), sol.converged.numel()))
+
+    print("IK converged number: %d / %d" % (sol.converged.sum(),sol.converged.numel()))
     print("IK took %d iterations" % sol.iterations)
 
     # visualization
@@ -738,9 +805,34 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
 
     # Solve IK for all interpolated transforms (batch solution)
     sol = ik.iterative_interpolation_solve(start_tf, end_tf, n)
+    # Initialize lists to store err_pos and err_rot tensors
+    err_pos_list = []
+    err_rot_list = []
+    accumulated_iterations, converged_sum, converged_numel = 0,0,0
 
-    # print("IK converged number: %d / %d" % (sol.converged.sum(), sol.converged.numel()))
-    # print("IK took %d iterations" % sol.iterations)
+    # Iterate through each IKSolution and accumulate the tensors
+    for s in sol:
+        err_pos_list.append(s.err_pos)
+        err_rot_list.append(s.err_rot)
+        accumulated_iterations += s.iterations
+        converged_sum += s.converged.sum()
+        converged_numel += s.converged.numel()
+
+
+    # Stack tensors along a new dimension to accumulate them
+    accumulated_err_pos = torch.stack(err_pos_list)
+    accumulated_err_rot = torch.stack(err_rot_list)
+    
+    # Compute the average position and rotation errors
+    average_err_pos = torch.mean(accumulated_err_pos)
+    average_err_rot = torch.mean(accumulated_err_rot)
+
+    # Print the results
+    print("\n\nAverage Position Error:", average_err_pos.item())
+    print("Average Rotation Error:", average_err_rot.item())
+
+    print("IK converged number: %d / %d" % (converged_sum,converged_numel))
+    print("IK took %d iterations" % accumulated_iterations)
 
     # Visualization setup
     p.connect(p.GUI)
@@ -875,19 +967,42 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
                             debug=False,
                             lr=0.2)
 
-    # Solve IK for all interpolated transforms (batch solution)
-    sol = ik.parallel_solve(start_tf, end_tf, n)
-    
+    err_pos_list = []
+    err_rot_list = []
+    accumulated_iterations, converged_sum, converged_numel = 0,0,0
 
-    # print("IK converged number: %d / %d" % (sol.converged.sum(), sol.converged.numel()))
-    # print("IK took %d iterations" % sol.iterations)
+    sol = ik.parallel_interpolation_solve(start_tf, end_tf, n)
+
+    # Iterate through each IKSolution and accumulate the tensors
+    for s in sol:
+        err_pos_list.append(s.err_pos)
+        err_rot_list.append(s.err_rot)
+        accumulated_iterations += s.iterations
+        converged_sum += s.converged.sum()
+        converged_numel += s.converged.numel()
+
+
+    # Stack tensors along a new dimension to accumulate them
+    accumulated_err_pos = torch.stack(err_pos_list)
+    accumulated_err_rot = torch.stack(err_rot_list)
+    
+    # Compute the average position and rotation errors
+    average_err_pos = torch.mean(accumulated_err_pos)
+    average_err_rot = torch.mean(accumulated_err_rot)
+
+    # Print the results
+    print("\n\nAverage Position Error:", average_err_pos.item())
+    print("Average Rotation Error:", average_err_rot.item())
+
+    print("IK converged number: %d / %d" % (converged_sum,converged_numel))
+    print("IK took %d iterations" % accumulated_iterations)
 
     # Visualization setup
     p.connect(p.GUI)
     p.setRealTimeSimulation(False)
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
     p.setAdditionalSearchPath(search_path)
-    print("flag",search_path)
+    # print("flag",search_path)
 
     # Setup camera view
     yaw = 90
@@ -925,6 +1040,7 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
         original_joint_states.append(p.getJointState(armId, dof)[0])  # Save the joint position
     # print("Length: ",len(sol))
     # Apply IK solutions to the robot's joints and visualize each
+    
     for ii in range(num_retries):
 
         # Reset to the original joint states
@@ -937,7 +1053,6 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
             # print(sol[step].solutions.shape)
             solutions = sol[step].solutions[0,:,:]           
             
-
             # Apply the IK solution
             q = solutions[ii, :]
             for dof in range(q.shape[0]):
@@ -948,6 +1063,8 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
             end_effector_tf = start_tf.compose(end_effector_tf)
 
             # Compute errors
+
+        
 
             pos_error, rot_error = pk.compute_error(all_tfs[step], end_effector_tf)
 
@@ -1011,7 +1128,7 @@ if __name__ == "__main__":
     # print("_____________________________________________________")
     # test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
     # print("_____________________________________________________")
-    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
+    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,skip=True)
     # print("_____________________________________________________")
-    test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=1, max_iterations=mi,skip=True)
+    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=1, max_iterations=mi,skip=True)
     # print("_____________________________________________________")

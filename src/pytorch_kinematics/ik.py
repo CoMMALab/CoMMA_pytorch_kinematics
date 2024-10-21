@@ -500,7 +500,7 @@ class PseudoInverseIK(InverseKinematics):
         print(sol.solutions.shape)
         return sol
 
-    def parallel_solve(self, start_poses, target_poses: Transform3d, n) -> List[IKSolution]:
+    def parallel_interpolation_solve(self, start_poses, target_poses: Transform3d, n) -> List[IKSolution]:
         # Interpolate poses
         interpolated_tfs = interpolate_poses(start_poses, target_poses, n)
 

@@ -937,12 +937,13 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
     
 
     # world frame goal
-    M = 1  # Only testing with a single goal
+    M = 2  # Only testing with a single goal
     lim = torch.tensor(chain.get_joint_limits(), device=device)
     goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
 
     # get ee pose (in robot frame)
     end_tf = chain.forward_kinematics(goal_q)
+
 
     print("Start TF:",start_tf)
     interpolated_tfs = pk.interpolate_poses(start_tf, end_tf, n)
@@ -1128,7 +1129,7 @@ if __name__ == "__main__":
     # print("_____________________________________________________")
     # test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
     # print("_____________________________________________________")
-    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,skip=True)
+    test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,skip=True)
     # print("_____________________________________________________")
     # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=1, max_iterations=mi,skip=True)
     # print("_____________________________________________________")

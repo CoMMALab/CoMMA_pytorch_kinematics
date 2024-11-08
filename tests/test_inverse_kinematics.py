@@ -362,18 +362,20 @@ def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka
     total_iterations = 0
     total_converged_any = 0
     M_total = 0
+    M_total_any = 0
 
     for s in sol:
         total_converged += s.converged.sum().item()  
         M_total += s.converged.numel() 
         total_iterations += s.iterations
         total_converged_any += s.converged_any.sum().item()
+        M_total_any += s.converged_any.numel() 
         
 
     print("IK took %f seconds" % (timer_end - timer_start))
     print("IK converged number: %d / %d" % (total_converged, M_total))
     print("IK took %d iterations" % total_iterations)
-    print("IK solved %d / %d goals" % (total_converged_any, M))
+    print("IK solved %d / %d goals" % (total_converged_any, M_total_any))
 
     # check that solving again produces the same solutions
     sol_again = ik.iterative_interpolation_solve(rob_tf, goal_in_rob_frame_tf, n)
@@ -539,18 +541,20 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
     total_iterations = 0
     total_converged_any = 0
     M_total = 0
+    M_total_any = 0
 
     for s in sol:
         total_converged += s.converged.sum().item()  
         M_total += s.converged.numel() 
         total_iterations += s.iterations
         total_converged_any += s.converged_any.sum().item()
+        M_total_any += s.converged_any.numel() 
         
 
     print("IK took %f seconds" % (timer_end - timer_start))
     print("IK converged number: %d / %d" % (total_converged, M_total))
     print("IK took %d iterations" % total_iterations)
-    print("IK solved %d / %d goals" % (total_converged_any, M))
+    print("IK solved %d / %d goals" % (total_converged_any, M_total_any))
 
     # check that solving again produces the same solutions
     sol_again = ik.parallel_interpolation_solve(rob_tf, goal_in_rob_frame_tf, n)

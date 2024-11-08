@@ -28,9 +28,9 @@ with open(file_path_3, 'r') as json_file_3:
 
 
 
-def test_dataset(data, urdf, chain, interpolation_method, M, n=10, visualize = True, delay = True, skip = False):
+def test_dataset_ik(data, urdf, chain, interpolation_method, M, n=10, visualize = True, delay = True, skip = False):
     # data is a list of dictionaries which contain position and rotation tensors under goal poses. Datasets are loaded from JSON files.
-    
+
     coalesced_position = []
     coalesced_rotation = []
     for i in range(M):
@@ -54,6 +54,7 @@ def test_dataset(data, urdf, chain, interpolation_method, M, n=10, visualize = T
 
     # get ee pose (in robot frame)
     # Create non-random end effector goal
+    # Stacking dataset poses and feeding them as goals into the ik solver, testing to see if they can reach pre-established goals
     goal_in_rob_frame_tf = pk.Transform3d(pos=coalesced_position, rot=coalesced_position, device=device)
 
     # transform to world frame for visualization
@@ -213,6 +214,48 @@ def test_dataset(data, urdf, chain, interpolation_method, M, n=10, visualize = T
             while True:
                 p.stepSimulation()
 
+def test_dataset_fk(data, chain, device):
+    # data is a list of dictionaries which contain position and rotation tensors under goal poses. Datasets are loaded from JSON files.
+    def quat_pos_from_transform3d(tg):
+        m = tg.get_matrix()
+        pos = m[:, :3, 3]
+        rot = pk.matrix_to_quaternion(m[:, :3, :3])
+        return pos, rot
+    
+    # coalesced_joints = []
+    
+    # testing if forward kinematics on the provided joints results in the associated pose. Unfortunately there are several joint angles (likely to demonstrate movement) 
+    # which makes it difficult to pinpoint which one to use. I chose the last joint angles arbitrarily as i assume they are closest to the end pose
+    # but there is still a discrepency with the output pose and computed pose.
+    pos_errors = []
+    rot_errors = []
+    for i in range(M):
+        # for j in range(len(data[i]['goal_ik'])):
+        # print(data[i]['goal_ik'][-1])
+        joints = data[i]['goal_ik'][0]
+        ret = chain.forward_kinematics(joints)
+        tg = ret
+        pos, rot = quat_pos_from_transform3d(tg)
+        pos_error = (pos - torch.tensor([data[i]['goal_pose']['position_xyz']], device=device))[0]
+        rot_error = (rot - torch.tensor([data[i]['goal_pose']['quaternion_wxyz']], device=device))[0]
+        pos_errors.append(pos_error)
+        rot_errors.append(rot_error)
+
+
+    # Convert lists to tensors for averaging
+    pos_errors_tensor = torch.stack(pos_errors)
+    rot_errors_tensor = torch.stack(rot_errors)
+
+    # Compute the mean (average) for position and rotation errors
+    avg_pos_error = pos_errors_tensor.mean(dim=0)
+    avg_rot_error = rot_errors_tensor.mean(dim=0)
+    print(f"avg pos error: {avg_pos_error}")
+    print(f"avg rot error: {avg_rot_error}")
+    # print()
+    print('------------------------------------------------------------')
+
+    
+
 
 if __name__ == "__main__":
     search_path = pybullet_data.getDataPath()
@@ -227,7 +270,18 @@ if __name__ == "__main__":
     # chain = pk.build_serial_chain_from_urdf(open(full_urdf, "rb").read(), "ee_gripper_link")
     # chain = chain.to(device=device)
 
+    # urdf = "franka/fp3_franka_hand.urdf"
+    # full_urdf = urdf
+    # chain = pk.build_chain_from_urdf(open(full_urdf, mode="rb").read())
+    # chain = pk.SerialChain(chain, "fp3_hand_tcp", "base")
+    # chain = chain.to(device=device)
+
     M = len(data_dict_2['bookshelf_small_panda'])
     data = data_dict_2['bookshelf_small_panda']
 
-    test_dataset(data=data, urdf=urdf, chain=chain,interpolation_method='parallel',M=M,n=100)
+    # testing fk on the widow robot doesn't work, likely a mismatch of joints
+    test_dataset_fk(data,chain, device)
+    test_dataset_ik(data=data, urdf=urdf, chain=chain,interpolation_method='parallel',M=M,n=100)
+    
+
+    

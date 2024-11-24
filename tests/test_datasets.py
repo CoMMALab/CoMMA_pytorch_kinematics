@@ -234,6 +234,7 @@ def test_dataset_fk(data, chain, device):
         # print(data[i]['goal_ik'][-1])
         joints = data[i]['goal_ik'][0]
         ret = chain.forward_kinematics(joints)
+
         tg = ret
         pos, rot = quat_pos_from_transform3d(tg)
         pos_error = (pos - torch.tensor([data[i]['goal_pose']['position_xyz']], device=device))[0]
@@ -245,6 +246,34 @@ def test_dataset_fk(data, chain, device):
     # Convert lists to tensors for averaging
     pos_errors_tensor = torch.stack(pos_errors)
     rot_errors_tensor = torch.stack(rot_errors)
+
+    import matplotlib.pyplot as plt
+
+    # Convert position errors to scalars for plotting
+    pos_error_scalars = [torch.norm(e).item() for e in pos_errors_tensor]  # Compute Euclidean norm
+    rot_error_scalars = [torch.norm(e).item() for e in rot_errors_tensor]  # Compute quaternion norm
+
+
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+    # Position Error Distribution
+    axes[0].hist(pos_error_scalars, bins=30, alpha=0.7, color='blue', label='Position Errors')
+    axes[0].set_xlabel('Position Error (Euclidean distance)')
+    axes[0].set_ylabel('Frequency')
+    axes[0].set_title('Distribution of Position Errors')
+    axes[0].legend()
+    axes[0].grid(True)
+
+    # Rotation Error Distribution
+    axes[1].hist(rot_error_scalars, bins=30, alpha=0.7, color='orange', label='Rotation Errors')
+    axes[1].set_xlabel('Rotation Error (Quaternion norm)')
+    axes[1].set_ylabel('Frequency')
+    axes[1].set_title('Distribution of Rotation Errors')
+    axes[1].legend()
+    axes[1].grid(True)
+
+    # Adjust layout and display the plot
+    plt.tight_layout()
+    plt.show()
 
     # Compute the mean (average) for position and rotation errors
     avg_pos_error = pos_errors_tensor.mean(dim=0)
@@ -260,21 +289,24 @@ def test_dataset_fk(data, chain, device):
 if __name__ == "__main__":
     search_path = pybullet_data.getDataPath()
 
-    urdf = "kuka_iiwa/model.urdf"
-    full_urdf = os.path.join(search_path, urdf)
-    chain = pk.build_serial_chain_from_urdf(open(full_urdf).read(), "lbr_iiwa_link_7")
-    chain = chain.to(device=device)
+    # urdf = "kuka_iiwa/model.urdf"
+    # full_urdf = os.path.join(search_path, urdf)
+    # chain = pk.build_serial_chain_from_urdf(open(full_urdf).read(), "lbr_iiwa_link_7")
+    # chain = chain.to(device=device)
 
+    # Note: widowx will not work with this dataset because it has 6 joints rather than 7
     # urdf = "widowx/wx250s.urdf"
     # full_urdf = urdf
     # chain = pk.build_serial_chain_from_urdf(open(full_urdf, "rb").read(), "ee_gripper_link")
     # chain = chain.to(device=device)
 
-    # urdf = "franka/fp3_franka_hand.urdf"
-    # full_urdf = urdf
-    # chain = pk.build_chain_from_urdf(open(full_urdf, mode="rb").read())
-    # chain = pk.SerialChain(chain, "fp3_hand_tcp", "base")
-    # chain = chain.to(device=device)
+    
+
+    urdf = "franka/fp3_franka_hand.urdf"
+    full_urdf = urdf
+    chain = pk.build_chain_from_urdf(open(full_urdf, mode="rb").read())
+    chain = pk.SerialChain(chain, "fp3_hand_tcp", "base")
+    chain = chain.to(device=device)
 
     M = len(data_dict_2['bookshelf_small_panda'])
     data = data_dict_2['bookshelf_small_panda']

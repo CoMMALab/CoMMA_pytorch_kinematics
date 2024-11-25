@@ -5,11 +5,9 @@ import copy
 import numpy as np
 import torch
 
-import pytorch_kinematics.transforms as tf
+import python_robotics_middleware.transforms as tf
 from pytorch_kinematics import jacobian
-from pytorch_kinematics.frame import Frame, Link, Joint
-from pytorch_kinematics.transforms.rotation_conversions import axis_and_angle_to_matrix_44, axis_and_d_to_pris_matrix
-
+from python_robotics_middleware.frame import Frame, Link, Joint
 
 def get_n_joints(th):
     """
@@ -287,70 +285,6 @@ class Chain:
             print(tree)
         return tree
 
-    def forward_kinematics(self, th, frame_indices: Optional = None):
-        """
-        Compute forward kinematics for the given joint values.
-
-        Args:
-            th: A dict, list, numpy array, or torch tensor of joints values. Possibly batched.
-            frame_indices: A list of frame indices to compute transforms for. If None, all frames are computed.
-                Use `get_frame_indices` to convert from frame names to frame indices.
-
-        Returns:
-            A dict of Transform3d objects for each frame.
-
-        """
-        if frame_indices is None:
-            frame_indices = self.get_all_frame_indices()
-
-        th = self.ensure_tensor(th)
-        th = torch.atleast_2d(th)
-
-        b = th.shape[0]
-        axes_expanded = self.axes.unsqueeze(0).repeat(b, 1, 1)
-
-        # compute all joint transforms at once first
-        # in order to handle multiple joint types without branching, we create all possible transforms
-        # for all joint types and then select the appropriate one for each joint.
-        rev_jnt_transform = axis_and_angle_to_matrix_44(axes_expanded, th)
-        pris_jnt_transform = axis_and_d_to_pris_matrix(axes_expanded, th)
-
-        frame_transforms = {}
-        b = th.shape[0]
-        for frame_idx in frame_indices:
-            frame_transform = torch.eye(4).to(th).unsqueeze(0).repeat(b, 1, 1)
-
-            # iterate down the list and compose the transform
-            for chain_idx in self.parents_indices[frame_idx.item()]:
-                if chain_idx.item() in frame_transforms:
-                    frame_transform = frame_transforms[chain_idx.item()]
-                else:
-                    link_offset_i = self.link_offsets[chain_idx]
-                    if link_offset_i is not None:
-                        frame_transform = frame_transform @ link_offset_i
-
-                    joint_offset_i = self.joint_offsets[chain_idx]
-                    if joint_offset_i is not None:
-                        frame_transform = frame_transform @ joint_offset_i
-
-                    jnt_idx = self.joint_indices[chain_idx]
-                    jnt_type = self.joint_type_indices[chain_idx]
-                    if jnt_type == 0:
-                        pass
-                    elif jnt_type == 1:
-                        jnt_transform_i = rev_jnt_transform[:, jnt_idx]
-                        frame_transform = frame_transform @ jnt_transform_i
-                    elif jnt_type == 2:
-                        jnt_transform_i = pris_jnt_transform[:, jnt_idx]
-                        frame_transform = frame_transform @ jnt_transform_i
-
-            frame_transforms[frame_idx.item()] = frame_transform
-
-        frame_names_and_transform3ds = {self.idx_to_frame[frame_idx]: tf.Transform3d(matrix=transform) for
-                                        frame_idx, transform in frame_transforms.items()}
-
-        return frame_names_and_transform3ds
-
     def ensure_tensor(self, th):
         """
         Converts a number of possible types into a tensor. The order of the tensor is determined by the order
@@ -455,21 +389,12 @@ class SerialChain(Chain):
         self._serial_frames = frames
         super().__init__(frames[0], **kwargs)
 
-    def jacobian(self, th, locations=None, **kwargs):
-        if locations is not None:
-            locations = tf.Transform3d(pos=locations)
-        return jacobian.calc_jacobian(self, th, tool=locations, **kwargs)
+    # def jacobian(self, th, locations=None, **kwargs):
+    #     if locations is not None:
+    #         locations = tf.Transform3d(pos=locations)
+    #     return jacobian.calc_jacobian(self, th, tool=locations, **kwargs)
 
-    def forward_kinematics(self, th, end_only: bool = True):
-        """ Like the base class, except `th` only needs to contain the joints in the SerialChain, not all joints. """
-        frame_indices, th = self.convert_serial_inputs_to_chain_inputs(th, end_only)
-
-        mat = super().forward_kinematics(th, frame_indices)
-
-        if end_only:
-            return mat[self._serial_frames[-1].name]
-        else:
-            return mat
+    
 
     def convert_serial_inputs_to_chain_inputs(self, th, end_only: bool):
         # th = self.ensure_tensor(th)

@@ -5,6 +5,8 @@ import numpy as np
 import torch
 
 import pytorch_kinematics as pk
+from pytorch_kinematics import FKSolution 
+fk = FKSolution()
 import pytorch_seed
 
 import pybullet as p
@@ -114,7 +116,7 @@ def test_ik_in_place_no_err(robot="kuka_iiwa"):
     goal_q = cur_q.unsqueeze(0).repeat(M, 1)
 
     # get ee pose (in robot frame)
-    goal_in_rob_frame_tf = chain.forward_kinematics(goal_q)
+    goal_in_rob_frame_tf = fk.forward_kinematics(chain,goal_q)
 
     # transform to world frame for visualization
     goal_tf = rob_tf.compose(goal_in_rob_frame_tf)
@@ -161,7 +163,7 @@ def test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa", skip=False,seed=
     goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
 
     # get ee pose (in robot frame)
-    goal_in_rob_frame_tf = chain.forward_kinematics(goal_q)
+    goal_in_rob_frame_tf = fk.forward_kinematics(chain,goal_q)
 
     # transform to world frame for visualization
     goal_tf = rob_tf.compose(goal_in_rob_frame_tf)
@@ -313,7 +315,7 @@ def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka
     goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
 
     # get ee pose (in robot frame)
-    goal_in_rob_frame_tf = chain.forward_kinematics(goal_q)
+    goal_in_rob_frame_tf = fk.forward_kinematics(chain,goal_q)
 
     # transform to world frame for visualization
     goal_tf = rob_tf.compose(goal_in_rob_frame_tf)
@@ -490,7 +492,7 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
     goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
 
     # get ee pose (in robot frame)
-    goal_in_rob_frame_tf = chain.forward_kinematics(goal_q)
+    goal_in_rob_frame_tf = fk.forward_kinematics(chain,goal_q)
 
     # transform to world frame for visualization
     goal_tf = rob_tf.compose(goal_in_rob_frame_tf)
@@ -665,7 +667,7 @@ def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, ma
     goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
 
     # get ee pose (in robot frame)
-    goal_in_rob_frame_tf = chain.forward_kinematics(goal_q)
+    goal_in_rob_frame_tf = fk.forward_kinematics(chain,goal_q)
 
     # transform to world frame for visualization
     goal_tf = start_tf.compose(goal_in_rob_frame_tf)
@@ -738,7 +740,7 @@ def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, ma
             p.resetJointState(armId, dof, q[dof])
         
         # Compute the end-effector pose
-        end_effector_tf = chain.forward_kinematics(q.unsqueeze(0))
+        end_effector_tf = fk.forward_kinematics(chain,q.unsqueeze(0))
         end_effector_tf = start_tf.compose(end_effector_tf)
         
         # Compute errors
@@ -782,7 +784,7 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
     goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
 
     # get ee pose (in robot frame)
-    end_tf = chain.forward_kinematics(goal_q)
+    end_tf = fk.forward_kinematics(chain,goal_q)
     
     print("Start TF:",start_tf)
     interpolated_tfs = pk.interpolate_poses(start_tf, end_tf, n)
@@ -899,7 +901,7 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
                 p.resetJointState(armId, dof, q[dof])
 
             # Compute the end-effector pose
-            end_effector_tf = chain.forward_kinematics(q.unsqueeze(0))
+            end_effector_tf = fk.forward_kinematics(chain,q.unsqueeze(0))
             end_effector_tf = start_tf.compose(end_effector_tf)
 
             # Compute errors
@@ -946,7 +948,7 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
     goal_q = torch.rand(M, lim.shape[1], device=device) * (lim[1] - lim[0]) + lim[0]
 
     # get ee pose (in robot frame)
-    end_tf = chain.forward_kinematics(goal_q)
+    end_tf = fk.forward_kinematics(chain,goal_q)
 
 
     print("Start TF:",start_tf)
@@ -1064,7 +1066,7 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
                 p.resetJointState(armId, dof, q[dof])
 
             # Compute the end-effector pose
-            end_effector_tf = chain.forward_kinematics(q.unsqueeze(0))
+            end_effector_tf = fk.forward_kinematics(chain,q.unsqueeze(0))
             end_effector_tf = start_tf.compose(end_effector_tf)
 
             # Compute errors
@@ -1133,7 +1135,7 @@ if __name__ == "__main__":
     # print("_____________________________________________________")
     # test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
     # print("_____________________________________________________")
-    test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,skip=True)
+    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
     # print("_____________________________________________________")
-    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=1, max_iterations=mi,skip=True)
+    test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=20, max_iterations=mi,delay=True)
     # print("_____________________________________________________")

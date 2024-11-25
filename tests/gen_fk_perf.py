@@ -4,6 +4,8 @@ from time import perf_counter
 import torch
 
 import pytorch_kinematics as pk
+from pytorch_kinematics import FKSolution 
+fk = FKSolution()
 import numpy as np
 
 
@@ -27,7 +29,7 @@ def main():
     data = []
 
     def _fk(th):
-        return chain.forward_kinematics(th)
+        return fk.forward_kinematics(chain, th)
 
     for name, chain in chains.items():
         for device in devices:

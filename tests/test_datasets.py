@@ -6,6 +6,8 @@ import numpy as np
 import torch
 
 import pytorch_kinematics as pk
+from pytorch_kinematics import FKSolution 
+fk = FKSolution()
 import pytorch_seed
 
 import pybullet as p
@@ -233,7 +235,7 @@ def test_dataset_fk(data, chain, device):
         # for j in range(len(data[i]['goal_ik'])):
         # print(data[i]['goal_ik'][-1])
         joints = data[i]['goal_ik'][0]
-        ret = chain.forward_kinematics(joints)
+        ret = fk.forward_kinematics(chain, joints)
 
         tg = ret
         pos, rot = quat_pos_from_transform3d(tg)

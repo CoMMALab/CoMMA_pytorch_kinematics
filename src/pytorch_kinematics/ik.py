@@ -1,6 +1,6 @@
 from pytorch_kinematics.chain import SerialChain
-from pytorch_kinematics.transforms import Transform3d
-from pytorch_kinematics.transforms import rotation_conversions
+from python_robotics_middleware.transforms import Transform3d
+from python_robotics_middleware.transforms import rotation_conversions
 from pytorch_kinematics.interpolation import interpolate_poses
 from typing import NamedTuple, Union, Optional, Callable
 import typing
@@ -8,7 +8,11 @@ import torch
 import inspect
 from matplotlib import pyplot as plt, cm as cm
 from typing import List
+from pytorch_kinematics.fk import FKSolution
+fk = FKSolution()
 
+from pytorch_kinematics.jacobian import Jacobian
+jacobian = Jacobian()
 
 class IKSolution:
     def __init__(self, dof, num_problems, num_retries, pos_tolerance, rot_tolerance, device="cpu"):
@@ -178,7 +182,7 @@ class BacktrackingLineSearch(LineSearch):
             # try stepping with this learning rate
             q_new = q + lr.unsqueeze(1) * dq
             # evaluate the error
-            m = chain.forward_kinematics(q_new).get_matrix()
+            m = fk.forward_kinematics(chain, q_new).get_matrix()
             m = m.view(-1, M, 4, 4)
             dx, pos_diff, rot_diff = delta_pose(m, target_pos, target_wxyz)
             err_new = dx.squeeze().norm(dim=-1)
@@ -410,7 +414,7 @@ class PseudoInverseIK(InverseKinematics):
                 sol.iterations += 1
                 # compute forward kinematics
                 # N x 6 x DOF
-                J, m = self.chain.jacobian(q, ret_eef_pose=True)
+                J, m = jacobian.jacobian(self.chain, q, ret_eef_pose=True)
                 # unflatten to broadcast with goal
                 m = m.view(-1, self.num_retries, 4, 4)
                 dx, pos_diff, rot_diff = delta_pose(m, target_pos, target_wxyz)
@@ -549,7 +553,7 @@ class PseudoInverseIK(InverseKinematics):
                 sol.iterations += 1
                 # compute forward kinematics
                 # N x 6 x DOF
-                J, m = self.chain.jacobian(q, ret_eef_pose=True)
+                J, m = jacobian.jacobian(self.chain,q, ret_eef_pose=True)
                 # unflatten to broadcast with goal
                 m = m.view(-1, self.num_retries, 4, 4)
                 dx, pos_diff, rot_diff = delta_pose(m, target_pos, target_wxyz)
@@ -696,7 +700,7 @@ class PseudoInverseIK(InverseKinematics):
                     sol.iterations += 1
 
                     # Compute forward kinematics and Jacobian
-                    J, m = self.chain.jacobian(q, ret_eef_pose=True)
+                    J, m = jacobian.jacobian(self.chain,q, ret_eef_pose=True)
                     m = m.view(-1, self.num_retries, 4, 4)
 
                     # Compute the delta pose between start and goal

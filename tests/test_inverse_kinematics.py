@@ -106,7 +106,7 @@ def test_ik_in_place_no_err(robot="kuka_iiwa"):
     chain, urdf = create_test_chain(robot=robot, device=device)
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0,1.0], device=device)
     rob_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
 
     # goal equal to current configuration
@@ -152,7 +152,7 @@ def test_multiple_robot_ik_jacobian_follower(robot="kuka_iiwa", skip=False,seed=
 
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0,1.0], device=device)
     rob_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
 
     # world frame goal
@@ -304,7 +304,7 @@ def test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka
 
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0,1.0], device=device)
     rob_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
 
     # world frame goal
@@ -481,7 +481,7 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
 
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0,1.0], device=device)
     rob_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
 
     # world frame goal
@@ -657,7 +657,7 @@ def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, ma
 
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0,1.0], device=device)
     start_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
     
 
@@ -684,7 +684,33 @@ def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, ma
 
     # do IK
     sol = ik.solve(goal_in_rob_frame_tf)
+    err_pos_list = []
+    err_rot_list = []
+    accumulated_iterations, converged_sum, converged_numel = 0,0,0
 
+    # Iterate through each IKSolution and accumulate the tensors
+    for s in [sol]:
+        err_pos_list.append(s.err_pos)
+        err_rot_list.append(s.err_rot)
+        accumulated_iterations += s.iterations
+        converged_sum += s.converged.sum()
+        converged_numel += s.converged.numel()
+
+
+    # Stack tensors along a new dimension to accumulate them
+    accumulated_err_pos = torch.stack(err_pos_list)
+    accumulated_err_rot = torch.stack(err_rot_list)
+    
+    # Compute the average position and rotation errors
+    average_err_pos = torch.mean(accumulated_err_pos)
+    average_err_rot = torch.mean(accumulated_err_rot)
+
+    # Print the results
+    print("\n\nAverage Position Error:", average_err_pos.item())
+    print("Average Rotation Error:", average_err_rot.item())
+
+    print("IK converged number: %d / %d" % (converged_sum,converged_numel))
+    print("IK took %d iterations" % accumulated_iterations)
     print("IK converged number: %d / %d" % (sol.converged.sum(),sol.converged.numel()))
     print("IK took %d iterations" % sol.iterations)
 
@@ -753,8 +779,8 @@ def test_single_robot_ik_jacobian_follower(robot="kuka_iiwa", num_retries=10, ma
         except:
             print(f"Position Error: {pos_error[0].item():.2f} meters")
             print(f"Rotation Error: {rot_error[0].item():.2f} radians")
-        
-        # time.sleep(0.02)
+        if delay:
+            time.sleep(0.2)
         if skip:
             input("Press Enter to continue to the next solution")
     
@@ -774,7 +800,7 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
      
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0,1.0], device=device)
     start_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
     
 
@@ -917,7 +943,8 @@ def test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="kuka_i
                 print(f"Rotation Error: {rot_error[0].item():.2f} radians")
             # write_to_csv(pos_error.item(), rot_error.item(), n, max_iterations, "interpolation.csv")
             # write_to_csv_with_step(pos_error.item(), rot_error.item(), n, max_iterations, step + 1, "steps.csv")
-            # time.sleep(0.02)
+            if delay:
+                time.sleep(0.02)
             if skip:
                 input("Press Enter to continue to the next step")
         if skip:
@@ -938,7 +965,7 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
      
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0,1.0], device=device)
     start_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
     
 
@@ -1084,7 +1111,8 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
                 print(f"Rotation Error: {rot_error[0].item():.2f} radians")
             # write_to_csv(pos_error.item(), rot_error.item(), n, max_iterations, "interpolation.csv")
             # write_to_csv_with_step(pos_error.item(), rot_error.item(), n, max_iterations, step + 1, "steps.csv")
-            # time.sleep(0.02)
+            if delay:
+                time.sleep(0.02)
             if skip:
                 input("Press Enter to continue to the next step")
         if skip:
@@ -1099,6 +1127,7 @@ def test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="kuka_ii
 
 
 if __name__ == "__main__":
+    mi=1000
     print("Testing coalescing functions")
     test_coalesce_and_reshape()
     print("_____________________________________________________")
@@ -1112,7 +1141,7 @@ if __name__ == "__main__":
     # print("_____________________________________________________")
     # test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="kuka_iiwa", n=10, seed=3)
     # print("_____________________________________________________")
-    # test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_iiwa", n=10, seed=3)
+    # test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_iiwa", n=10, seed=3, delay=True)
     # print("_____________________________________________________")
     # print("Testing widowx IK")
     # print("_____________________________________________________")
@@ -1130,12 +1159,11 @@ if __name__ == "__main__":
     # print("_____________________________________________________")
     # test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="fp3_franka_hand", n=10, seed=3,delay=True)
     # print("_____________________________________________________")
-    mi=1000
-    # test_single_robot_ik_jacobian_follower(robot="widowx", num_retries=10, max_iterations=mi)
+    
+    test_single_robot_ik_jacobian_follower(robot="fp3_franka_hand", num_retries=10, max_iterations=mi, skip=True)
     # print("_____________________________________________________")
-    # test_single_robot_jacobian_follower_ik_iterative_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
+    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=1, n=50, max_iterations=mi,delay=True)
     # print("_____________________________________________________")
-    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="widowx", num_retries=10, max_iterations=mi,delay=True)
+    # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=1, n=50, max_iterations=mi,delay=True)
     # print("_____________________________________________________")
-    test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=20, max_iterations=mi,delay=True)
-    # print("_____________________________________________________")
+    

@@ -10,6 +10,7 @@ fk = FKSolution()
 from python_robotics_middleware.transforms.math import quaternion_close
 
 TEST_DIR = os.path.dirname(__file__)
+UM_ARM_LAB_ASSETS = os.path.join(TEST_DIR, "UM-ARM-Lab-Assets")
 
 
 def quat_pos_from_transform3d(tg):
@@ -22,7 +23,7 @@ def quat_pos_from_transform3d(tg):
 # test more complex robot and the MJCF parser
 def test_fk_mjcf():
     print("Test forward kinematics for MJCF robot")
-    chain = pk.build_chain_from_mjcf(open(os.path.join(TEST_DIR, "ant.xml")).read())
+    chain = pk.build_chain_from_mjcf(open(os.path.join(UM_ARM_LAB_ASSETS, "ant.xml")).read())
     chain = chain.to(dtype=torch.float64)
     print("\tRobot chain:", chain)
     print("\tJoint parameter names:", chain.get_joint_parameter_names())
@@ -55,7 +56,7 @@ def test_fk_mjcf():
 
 
 def test_fk_serial_mjcf():
-    chain = pk.build_serial_chain_from_mjcf(open(os.path.join(TEST_DIR, "ant.xml")).read(), 'front_left_foot')
+    chain = pk.build_serial_chain_from_mjcf(open(os.path.join(UM_ARM_LAB_ASSETS, "ant.xml")).read(), 'front_left_foot')
     chain = chain.to(dtype=torch.float64)
     tg = fk.forward_kinematics(chain, [1.0, 1.0])
     pos, rot = quat_pos_from_transform3d(tg)
@@ -112,7 +113,7 @@ def test_fkik():
 
 
 def test_urdf():
-    chain = pk.build_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read())
+    chain = pk.build_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "kuka_iiwa.urdf")).read())
     chain.to(dtype=torch.float64)
     th = [0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0]
     ret = fk.forward_kinematics(chain,th)
@@ -128,7 +129,7 @@ def test_urdf():
 
 def test_urdf_serial():
     print("Test building serial chain from URDF")
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read(), "lbr_iiwa_link_7")
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "kuka_iiwa.urdf")).read(), "lbr_iiwa_link_7")
     chain.to(dtype=torch.float64)
     th = [0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0]
 
@@ -180,7 +181,7 @@ def test_urdf_serial():
 # test robot with prismatic and fixed joints
 def test_fk_simple_arm():
     print("Test forward kinematics for simple arm")
-    chain = pk.build_chain_from_sdf(open(os.path.join(TEST_DIR, "simple_arm.sdf")).read())
+    chain = pk.build_chain_from_sdf(open(os.path.join(UM_ARM_LAB_ASSETS, "simple_arm.sdf")).read())
     chain = chain.to(dtype=torch.float64)
     # print(chain)
     # print(chain.get_joint_parameter_names())
@@ -212,7 +213,7 @@ def test_fk_simple_arm():
 
 def test_sdf_serial_chain():
     print("Test building the serial chain from sdf file")
-    chain = pk.build_serial_chain_from_sdf(open(os.path.join(TEST_DIR, "simple_arm.sdf")).read(), 'arm_wrist_roll')
+    chain = pk.build_serial_chain_from_sdf(open(os.path.join(UM_ARM_LAB_ASSETS, "simple_arm.sdf")).read(), 'arm_wrist_roll')
     chain = chain.to(dtype=torch.float64)
     tg = fk.forward_kinematics(chain,[0., math.pi / 2.0, -0.5, 0.])
     pos, rot = quat_pos_from_transform3d(tg)
@@ -229,13 +230,13 @@ def test_cuda():
     if torch.cuda.is_available():
         d = "cuda"
         dtype = torch.float64
-        chain = pk.build_chain_from_sdf(open(os.path.join(TEST_DIR, "simple_arm.sdf")).read())
+        chain = pk.build_chain_from_sdf(open(os.path.join(UM_ARM_LAB_ASSETS, "simple_arm.sdf")).read())
         # noinspection PyUnusedLocal
         chain = chain.to(dtype=dtype, device=d)
 
         # NOTE: do it twice because we previously had an issue with default arguments
         #  like joint=Joint() causing spooky behavior
-        chain = pk.build_chain_from_sdf(open(os.path.join(TEST_DIR, "simple_arm.sdf")).read())
+        chain = pk.build_chain_from_sdf(open(os.path.join(UM_ARM_LAB_ASSETS, "simple_arm.sdf")).read())
         chain = chain.to(dtype=dtype, device=d)
 
         ret = fk.forward_kinematics(chain,{
@@ -298,14 +299,14 @@ def test_mjcf_slide_joint_parsing():
     # just testing that we can parse it without error
     # the slide joint is not actually of a link to another link, but instead of the base to the world
     # which we do not represent
-    chain = pk.build_chain_from_mjcf(open(os.path.join(TEST_DIR, "hopper.xml")).read())
+    chain = pk.build_chain_from_mjcf(open(os.path.join(UM_ARM_LAB_ASSETS, "hopper.xml")).read())
     print("\t",chain.get_joint_parameter_names())
     print("\t",chain.get_frame_names())
 
 
 def test_fk_val():
     print("Test Forward Kinematics Values")
-    chain = pk.build_chain_from_mjcf(open(os.path.join(TEST_DIR, "val.xml")).read())
+    chain = pk.build_chain_from_mjcf(open(os.path.join(UM_ARM_LAB_ASSETS, "val.xml")).read())
     chain = chain.to(dtype=torch.float64)
     ret = fk.forward_kinematics(chain,torch.zeros([1000, chain.n_joints], dtype=torch.float64))
     tg = ret['drive45']
@@ -322,7 +323,7 @@ def test_fk_val():
 def test_fk_partial_batched_dict():
     print("Test subsetting joints with a dictionary")
     # Test that you can pass in dict of batched joint configs for a subset of the joints
-    chain = pk.build_serial_chain_from_mjcf(open(os.path.join(TEST_DIR, "val.xml")).read(), 'left_tool')
+    chain = pk.build_serial_chain_from_mjcf(open(os.path.join(UM_ARM_LAB_ASSETS, "val.xml")).read(), 'left_tool')
     th = {
         'joint56': torch.zeros([1000], dtype=torch.float64),
         'joint57': torch.zeros([1000], dtype=torch.float64),
@@ -344,7 +345,7 @@ def test_fk_partial_batched_dict():
 def test_fk_partial_batched():
     # Test that you can pass in dict of batched joint configs for a subset of the joints
     print("Test subsetting joints")
-    chain = pk.build_serial_chain_from_mjcf(open(os.path.join(TEST_DIR, "val.xml")).read(), 'left_tool')
+    chain = pk.build_serial_chain_from_mjcf(open(os.path.join(UM_ARM_LAB_ASSETS, "val.xml")).read(), 'left_tool')
     th = torch.zeros([1000, 9], dtype=torch.float64)
     torch.set_printoptions(precision=2, sci_mode=False)
     chain = chain.to(dtype=torch.float64)
@@ -356,7 +357,7 @@ def test_fk_partial_batched():
 
 def test_ur5_fk():
     print("Test ur5 forward kinematics.")
-    urdf = os.path.join(TEST_DIR, "ur5.urdf")
+    urdf = os.path.join(UM_ARM_LAB_ASSETS, "ur5.urdf")
     pk_chain = pk.build_serial_chain_from_urdf(open(urdf).read(), 'ee_link', 'base_link')
     th = [0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0]
 

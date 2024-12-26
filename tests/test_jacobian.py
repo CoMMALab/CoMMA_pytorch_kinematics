@@ -11,13 +11,13 @@ from pytorch_kinematics import Jacobian
 jacobian = Jacobian()
 
 TEST_DIR = os.path.dirname(__file__)
-
+UM_ARM_LAB_ASSETS = os.path.join(TEST_DIR, "UM-ARM-Lab-Assets")
 
 def test_correctness():
     print("Test for General Correctness")
     # Scenario 1: Test calculated jacobian is the same as the expected tensor
     # Load chain for kuka_iiwa robot
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read(),
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "kuka_iiwa.urdf")).read(),
                                             "lbr_iiwa_link_7")
     # Defines the initial joint angles for the pose of the robot
     th = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0])
@@ -39,7 +39,7 @@ def test_correctness():
 
     # Scenario 2: Test calculated jacobian is not the same as the expected tensor
     # Load chain for simple_arm robot
-    chain = pk.build_chain_from_sdf(open(os.path.join(TEST_DIR, "simple_arm.sdf")).read())
+    chain = pk.build_chain_from_sdf(open(os.path.join(UM_ARM_LAB_ASSETS, "simple_arm.sdf")).read())
     # Adds "arm_wrist_roll" end-effector
     chain = pk.SerialChain(chain, "arm_wrist_roll")
     # Defines joint angles for the pose of the robot
@@ -63,7 +63,7 @@ def test_correctness():
 
 def test_jacobian_at_different_loc_than_ee():
     print("Test of the Jacobian calculations for a robot's kinematic chain at various points that are not the end-effector (EE)")
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read(),
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "kuka_iiwa.urdf")).read(),
                                             "lbr_iiwa_link_7")
     th = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0])
     loc = torch.tensor([0.1, 0, 0])
@@ -113,7 +113,7 @@ def test_jacobian_at_different_loc_than_ee():
 
 def test_jacobian_y_joint_axis():
     print("Tests the Jacobian computation for a robot with a joint axis along the y-axis")
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "simple_y_arm.urdf")).read(), "eef")
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "simple_y_arm.urdf")).read(), "eef")
     th = torch.tensor([0.])
     J = jacobian.jacobian(chain,th)
     J_c3 = torch.tensor([[[0.], [0.], [-0.3], [0.], [1.], [0.]]])
@@ -128,7 +128,7 @@ def test_parallel():
     print("Tests Jacobian Calculations for robots in parallel")
     tests_passed = 0
     N = 100
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read(),
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "kuka_iiwa.urdf")).read(),
                                             "lbr_iiwa_link_7")
     th = torch.cat(
         (torch.tensor([[0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0]]), torch.rand(N, 7)))
@@ -146,7 +146,7 @@ def test_dtype_device():
     d = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float64
 
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read(),
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "kuka_iiwa.urdf")).read(),
                                             "lbr_iiwa_link_7")
     chain = chain.to(dtype=dtype, device=d)
     th = torch.rand(N, 7, dtype=dtype, device=d)
@@ -162,7 +162,7 @@ def test_gradient():
     d = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float64
 
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read(),
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "kuka_iiwa.urdf")).read(),
                                             "lbr_iiwa_link_7")
     chain = chain.to(dtype=dtype, device=d)
     th = torch.rand(N, 7, dtype=dtype, device=d, requires_grad=True)
@@ -177,7 +177,7 @@ def test_gradient():
 def test_jacobian_prismatic():
     print("Tests the correctness of forward kinematics & the Jacobian computation for a robot with prismatic joints.")
     tests_passed = 0
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "prismatic_robot.urdf")).read(), "link4")
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "prismatic_robot.urdf")).read(), "link4")
     th = torch.zeros(3)
     tg = fk.forward_kinematics(chain,th)
     m = tg.get_matrix()
@@ -226,7 +226,7 @@ def test_jacobian_prismatic():
 
 def test_comparison_to_autograd():
     print("Compares the performance and accuracy of calculating the Jacobian using three different methods for a robotic kinematic chain")
-    chain = pk.build_serial_chain_from_urdf(open(os.path.join(TEST_DIR, "kuka_iiwa.urdf")).read(),
+    chain = pk.build_serial_chain_from_urdf(open(os.path.join(UM_ARM_LAB_ASSETS, "kuka_iiwa.urdf")).read(),
                                             "lbr_iiwa_link_7")
     d = "cuda" if torch.cuda.is_available() else "cpu"
     chain = chain.to(device=d)

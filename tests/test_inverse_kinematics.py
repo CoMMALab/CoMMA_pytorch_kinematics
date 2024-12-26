@@ -15,6 +15,7 @@ import time
 
 visualize = True
 
+# TODO: refactor test_ik to use Waypoint class rather than "goals"
 
 def _make_robot_translucent(robot_id, alpha=0.4):
     def make_transparent(link):
@@ -481,7 +482,7 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
 
     # robot frame
     pos = torch.tensor([0.0, 0.0, 0.0], device=device)
-    rot = torch.tensor([0.0, 0.0, 0.0,1.0], device=device)
+    rot = torch.tensor([0.0, 0.0, 0.0, 0.5], device=device)
     rob_tf = pk.Transform3d(pos=pos, rot=rot, device=device)
 
     # world frame goal
@@ -570,6 +571,7 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
         p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
         p.setAdditionalSearchPath(search_path)
 
+
         yaw = 90
         pitch = -65
         # dist = 1.
@@ -597,6 +599,8 @@ def test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="kuka_
             armId = p.loadURDF(urdf, basePosition=pos + this_offset, baseOrientation=rot, useFixedBase=True)
             # _make_robot_translucent(armId, alpha=0.6)
             robots.append({"id": armId, "offset": this_offset, "pos": pos})
+            print(f"Robot {i}")
+        
 
         show_max_num_retries_per_goal = 10
 
@@ -1157,10 +1161,10 @@ if __name__ == "__main__":
     # print("_____________________________________________________")
     # test_multiple_robot_ik_jacobian_follower_iterative_interpolation(robot="fp3_franka_hand", n=10, seed=3,delay=True)
     # print("_____________________________________________________")
-    # test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="fp3_franka_hand", n=10, seed=3,delay=True)
+    test_multiple_robot_ik_jacobian_follower_parallel_interpolation(robot="fp3_franka_hand", n=10, seed=3,delay=True)
     # print("_____________________________________________________")
     
-    test_single_robot_ik_jacobian_follower(robot="fp3_franka_hand", num_retries=10, max_iterations=mi, skip=True)
+    # test_single_robot_ik_jacobian_follower(robot="fp3_franka_hand", num_retries=10, max_iterations=mi, skip=True)
     # print("_____________________________________________________")
     # test_single_robot_jacobian_follower_ik_parallel_interpolation(robot="fp3_franka_hand", num_retries=1, n=50, max_iterations=mi,delay=True)
     # print("_____________________________________________________")
